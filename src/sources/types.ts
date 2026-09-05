@@ -19,10 +19,12 @@ export interface FetchResult {
   meta: Record<string, unknown>;
 }
 
+/** Maps 1:1 onto the non-ACTIVE, non-PAUSED page statuses. */
+export type FetchFailureReason = "robots_blocked" | "auth_required" | "rate_limited" | "fetch_error" | "content_unreadable";
+
 export interface FetchFailure {
   ok: false;
-  /** blocked = robots.txt or explicit 403-style block; error = anything else. */
-  reason: "blocked" | "error";
+  reason: FetchFailureReason;
   status: number | null;
   message: string;
 }

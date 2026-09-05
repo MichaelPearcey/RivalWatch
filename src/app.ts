@@ -1,10 +1,13 @@
 import { createAnalyzer } from "./ai/index.js";
 import type { Analyzer } from "./ai/types.js";
+import { Auth } from "./auth.js";
 import type { Config } from "./config.js";
 import { openAndMigrate, type Db } from "./db/index.js";
 import { Repo } from "./db/repo.js";
+import { DigestJob } from "./digest.js";
 import { Events } from "./events.js";
 import { setLogLevel } from "./logger.js";
+import { createMailer, type Mailer } from "./mail/index.js";
 import { Pipeline, type PipelineOptions } from "./monitor/pipeline.js";
 import { Scheduler } from "./monitor/scheduler.js";
 import { SourceRegistry } from "./sources/types.js";
@@ -18,9 +21,13 @@ export interface App {
   repo: Repo;
   events: Events;
   sources: SourceRegistry;
+  fetcher: PoliteFetcher;
   analyzer: Analyzer;
   pipeline: Pipeline;
   scheduler: Scheduler;
+  mailer: Mailer;
+  auth: Auth;
+  digests: DigestJob;
   close(): void;
 }
 
@@ -45,8 +52,14 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
   const sources = new SourceRegistry().register(new WebsiteSource(fetcher));
 
   const analyzer = overrides.analyzer ?? createAnalyzer(cfg, events);
-  const pipeline = new Pipeline(repo, events, sources, analyzer, overrides.pipeline ?? {});
-  const scheduler = new Scheduler(repo, events, pipeline, { tickSeconds: cfg.SCHEDULER_TICK_SECONDS });
+  const pipeline = new Pipeline(repo, events, sources, analyzer, { confirmDelayMinutes: cfg.CONFIRM_DELAY_MINUTES, ...overrides.pipeline });
+  const mailer = createMailer(cfg, repo, events, overrides.fetchImpl);
+  const auth = new Auth(cfg, repo, events, mailer);
+  const digests = new DigestJob(cfg, repo, events, mailer);
+
+  const scheduler = new Scheduler(repo, events, pipeline, { tickSeconds: cfg.SCHEDULER_TICK_SECONDS })
+    .addJob({ name: "digests", run: (now) => digests.runDue(now).then(() => undefined) })
+    .addJob({ name: "auth_purge", run: (now) => repo.purgeExpiredAuth(now.toISOString()) });
 
   return {
     cfg,
@@ -54,9 +67,13 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
     repo,
     events,
     sources,
+    fetcher,
     analyzer,
     pipeline,
     scheduler,
+    mailer,
+    auth,
+    digests,
     close() {
       scheduler.stop();
       db.close();

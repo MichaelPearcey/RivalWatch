@@ -14,17 +14,23 @@ export interface SchedulerStatus {
   lastTickAt: string | null;
   lastTickProcessed: number;
   ticks: number;
+  lastError: string | null;
 }
+
+/** Periodic housekeeping/jobs run after the page batch on every tick. */
+export type TickJob = { name: string; run: (now: Date) => Promise<void> | void };
 
 /**
  * Single-instance in-process scheduler. Each tick processes pages whose
- * next_check_at is due, sequentially (the fetcher already rate-limits per host).
+ * next_check_at is due, sequentially (the fetcher already rate-limits per host),
+ * then runs registered jobs (digests, auth purge...).
  */
 export class Scheduler {
   private timer: NodeJS.Timeout | null = null;
   private inTick = false;
-  private status: SchedulerStatus = { running: false, lastTickAt: null, lastTickProcessed: 0, ticks: 0 };
+  private status: SchedulerStatus = { running: false, lastTickAt: null, lastTickProcessed: 0, ticks: 0, lastError: null };
   private readonly batchSize: number;
+  private readonly jobs: TickJob[] = [];
 
   constructor(
     private readonly repo: Repo,
@@ -35,13 +41,18 @@ export class Scheduler {
     this.batchSize = opts.batchSize ?? 25;
   }
 
+  addJob(job: TickJob): this {
+    this.jobs.push(job);
+    return this;
+  }
+
   start(): void {
     if (this.timer) return;
     this.status.running = true;
     this.timer = setInterval(() => void this.tick(), this.opts.tickSeconds * 1000);
     this.timer.unref();
     void this.tick();
-    log.info("scheduler started", { tick_seconds: this.opts.tickSeconds });
+    log.info("scheduler started", { tick_seconds: this.opts.tickSeconds, jobs: this.jobs.map((j) => j.name) });
   }
 
   stop(): void {
@@ -54,7 +65,7 @@ export class Scheduler {
     return { ...this.status };
   }
 
-  /** Process all due pages once. Safe to call manually (CLI, API). */
+  /** Process all due pages and jobs once. Safe to call manually (CLI, API). */
   async tick(): Promise<number> {
     if (this.inTick) return 0;
     this.inTick = true;
@@ -68,14 +79,23 @@ export class Scheduler {
           log.debug("page processed", { page_id: page.id, url: page.url, outcome: outcome.status });
         } catch (err) {
           log.error("pipeline error", { page_id: page.id, ...errorFields(err) });
-          this.events.record({ type: "scheduler.error", entity: { type: "page", id: page.id }, payload: errorFields(err) });
+          this.status.lastError = (err as Error).message;
+          this.events.record({ type: "scheduler.error", accountId: page.account_id, entity: { type: "page", id: page.id }, result: "failed", payload: errorFields(err) });
         }
         processed++;
       }
-      this.status = { ...this.status, lastTickAt: new Date().toISOString(), lastTickProcessed: processed, ticks: this.status.ticks + 1 };
-      if (processed > 0) {
-        this.events.record({ type: "scheduler.tick", payload: { processed, duration_ms: Date.now() - started } });
+      const now = new Date();
+      for (const job of this.jobs) {
+        try {
+          await job.run(now);
+        } catch (err) {
+          log.error("scheduled job error", { job: job.name, ...errorFields(err) });
+          this.status.lastError = `${job.name}: ${(err as Error).message}`;
+          this.events.record({ type: "scheduler.error", result: "failed", payload: { job: job.name, ...errorFields(err) } });
+        }
       }
+      this.status = { ...this.status, lastTickAt: new Date().toISOString(), lastTickProcessed: processed, ticks: this.status.ticks + 1 };
+      if (processed > 0) this.events.record({ type: "scheduler.tick", payload: { processed, duration_ms: Date.now() - started } });
     } finally {
       this.inTick = false;
     }

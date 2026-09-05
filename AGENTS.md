@@ -22,6 +22,16 @@ npm run build      # tsc + copies src/db/migrations/*.sql into dist/
 
 ## Conventions
 
+- **Tenancy**: every `Repo` read of tenant-owned data takes `accountId` first
+  and filters in SQL. Only `*Any` methods cross tenants (scheduler/admin).
+  Route handlers never touch `repo` with ids from the request without going
+  through `web/actions.ts`, which takes the authenticated `Principal`.
+- **Events**: use the audit fields (`riskLevel`, `result`, `estimatedCostUsd`,
+  `requestedBy`, `approvedBy`) - failures must be `result: "failed"`, skipped
+  work `"skipped"`, denied actions `"denied"`. Never log raw emails in payloads
+  (use `maskEmail`).
+- **Page status**: only the pipeline sets `status`; new failure kinds must map
+  to one of the seven statuses in `PAGE_STATUSES`.
 - TypeScript strict, ESM, `.js` extensions in relative imports (NodeNext).
 - Plain SQL migrations in `src/db/migrations/NNN_name.sql`, applied in order,
   never edited after commit. Add a new file for schema changes.
@@ -50,6 +60,9 @@ approval; propose first.
 ## Testing guidance
 
 - `test/helpers.ts` boots the whole app in memory and routes the fetcher into
-  the Hono app, so end-to-end tests need no sockets or network.
+  the Hono app, so end-to-end tests need no sockets or network. `login()` runs
+  the real magic-link flow; `fixture()` gives a Pro account with the demo
+  competitor. The demo site exposes `/demo/status/:code` and `/demo/spa` to
+  exercise status classification.
 - Detector/analyser behaviour is tuned by tests in `test/detect.test.ts` and
   `test/heuristic.test.ts`. When changing thresholds, add a fixture showing why.

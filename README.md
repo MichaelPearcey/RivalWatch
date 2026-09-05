@@ -5,11 +5,13 @@ AI-filtered competitor monitoring for solopreneurs and small businesses.
 > Tell us who your competitors are. We continuously watch them and tell you
 > when something happens that actually matters.
 
-This repository contains the technical foundation and the core-loop MVP:
-
 ```
-business + competitors -> periodic fetch -> snapshots -> change detection
-  -> AI decides if it matters -> plain-English insight -> UI / JSON API
+account/user -> business + competitors -> page discovery (user confirms)
+  -> scheduled polite fetch -> snapshot -> change detection -> confirm on next fetch
+  -> AI decides if it matters (hard-capped spend, heuristic fallback)
+  -> plain-English insight -> dashboard / weekly digest email / JSON API
+  -> user feedback (useful / not useful / incorrect / too noisy)
+every step -> structured audit event (actor, action, target, risk, result, cost)
 ```
 
 Read `docs/` first if you are new (human or agent):
@@ -18,66 +20,71 @@ Read `docs/` first if you are new (human or agent):
 - `docs/02-architecture.md` - stack, layout, domain model, the loop, permission tiers
 - `docs/03-decisions.md` - ADRs (why things are the way they are)
 - `docs/04-risks.md` - crawling, social APIs, AI, ops risks and mitigations
-- `docs/05-external-services.md` - services/credentials we will eventually need
+- `docs/05-external-services.md` - services/credentials
 - `docs/06-roadmap.md` - what comes next
+- `docs/07-deployment.md` - Railway deployment, env vars, secrets, costs, runbook
 
 ## Requirements
 
-- Node.js >= 22.13 (uses built-in `fetch` and `node:sqlite`; no native builds)
-- No database server, no Docker, no API key needed to run or test
+- Node.js >= 22.13 (built-in `fetch` and `node:sqlite`; no native builds)
+- No database server, no Docker locally, no API keys needed to run or test
 
 ## Quick start
 
 ```bash
 npm install
-cp .env.example .env        # optional; defaults work
-npm run demo                # boots the server + fake competitor, runs the whole loop, prints insights
+cp .env.example .env        # optional; defaults work (heuristic AI, log-only email)
+npm run demo                # server + fake competitor; runs the whole loop; prints a sign-in link
 ```
-
-Then open `http://127.0.0.1:3000/b/1`.
 
 Other commands:
 
 ```bash
-npm run dev                 # server with reload, scheduler on
-npm run check               # typecheck + tests
-npm test                    # tests only (in-memory SQLite, no network)
-npm run build && npm start  # production build
-npm run cli -- tick         # process due pages once (cron-friendly)
-npm run cli -- scan 1       # scan every page of business 1 now
+npm run dev                          # server with reload, scheduler on
+npm run check                        # typecheck + tests (~1.5s, in-memory SQLite, no network)
+npm run build && npm start           # production build
+npm run cli -- tick                  # process due pages + jobs once (cron-friendly)
+npm run cli -- make-admin you@x.com  # grant the owner dashboard
+npm run cli -- login-link you@x.com  # print a one-time sign-in link (log email provider)
+node scripts/github-create-repo.mjs  # create the private GitHub repo (GITHUB_TOKEN from .env)
 ```
 
 ## Configuration
 
-All via environment variables; see `.env.example`. Notable:
+Environment variables only; see `.env.example` (documented) and
+`docs/07-deployment.md` (production values). Secrets: `ANTHROPIC_API_KEY`,
+`RESEND_API_KEY`. Never commit `.env`.
 
-| Var | Default | Meaning |
-|-----|---------|---------|
-| `AI_PROVIDER` | `heuristic` | `heuristic` (free, deterministic) or `anthropic` (needs `ANTHROPIC_API_KEY`) |
-| `AI_DAILY_CALL_CAP` | `500` | Max LLM calls per rolling 24h; excess falls back to heuristic |
-| `SCHEDULER_ENABLED` | `true` | Run the in-process scan loop |
-| `DEMO_SITE_ENABLED` | `true` | Serve the mutable fake competitor at `/demo/*`. **Set `false` in production.** |
-| `DATABASE_PATH` | `./data/rivalwatch.db` | SQLite file; `:memory:` for ephemeral |
+## API
 
-## API (agent-facing)
-
-Everything the UI does is available as JSON. Agents should send `X-Actor: agent:<name>` so events are attributed.
+Authenticate with the session cookie (browser) or `Authorization: Bearer rw_…`
+(API keys from `/settings`; actions are attributed to `agent:<name>`). All
+data is scoped to the caller's account.
 
 ```
-GET  /health                                  GET  /api/stats            GET /api/events?type=&since=&limit=
-GET  /api/plans
-GET/POST /api/businesses                      GET/PATCH /api/businesses/:id
-GET/POST /api/businesses/:id/competitors      DELETE /api/competitors/:id
-GET/POST /api/competitors/:id/pages           DELETE /api/pages/:id
-POST /api/businesses/:id/scan                 POST /api/pages/:id/scan     POST /api/scheduler/tick
-GET  /api/businesses/:id/insights?include_noise=1   GET /api/insights/:id   POST /api/insights/:id/read
-GET  /api/changes/:id                         POST /api/changes/:id/reanalyze
-GET  /api/pages/:id/snapshots                 GET  /api/snapshots/:id?raw=1
+GET  /health                         GET  /api/me                 GET  /api/plans
+POST /auth/login {email}             GET  /auth/verify?token=     POST /auth/logout
+GET/POST   /api/businesses           GET/PATCH/DELETE /api/businesses/:id
+GET/POST   /api/businesses/:id/competitors        DELETE /api/competitors/:id
+GET/POST   /api/competitors/:id/pages             POST /api/competitors/:id/discover
+GET        /api/competitors/:id/suggestions       POST /api/suggestions/:id/accept|dismiss
+GET/DELETE /api/pages/:id            POST /api/pages/:id/pause|resume|scan
+GET  /api/pages/:id/snapshots        GET  /api/pages/:id/changes  GET /api/snapshots/:id?raw=1
+POST /api/businesses/:id/scan        POST /api/businesses/:id/digest/send
+GET  /api/businesses/:id/insights?include_noise=1   GET /api/insights/:id
+POST /api/insights/:id/feedback {verdict, comment?}  POST /api/insights/:id/read
+GET  /api/changes/:id                POST /api/changes/:id/reanalyze
+GET  /api/events?type=&since=&limit= (own account)
+GET/POST /api/api-keys               DELETE /api/api-keys/:id
+Admin: GET /api/admin/overview  GET /api/admin/events  POST /api/admin/scheduler/tick  POST /api/admin/digests/run
 ```
 
-Demo site controls (local only): `GET/POST /demo/state`, `POST /demo/reset`.
+Page monitoring status is one of `ACTIVE | ROBOTS_BLOCKED | AUTH_REQUIRED |
+RATE_LIMITED | FETCH_ERROR | CONTENT_UNREADABLE | PAUSED`. Anything other than
+ACTIVE is shown as a problem, never as healthy.
 
 ## Status
 
-MVP. Single tenant, no auth, no billing, no email. Websites only. Do not
-expose publicly yet. See `docs/06-roadmap.md`.
+Phase 1: multi-tenant, passwordless auth, deployable. Websites only. No billing
+yet (plans are set by the operator). See `docs/06-roadmap.md` and the "known
+limitations" in `docs/07-deployment.md`.

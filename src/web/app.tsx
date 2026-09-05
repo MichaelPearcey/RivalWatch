@@ -1,42 +1,62 @@
-import { Hono } from "hono";
+import { Hono, type Context, type Next } from "hono";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { gunzipSync } from "node:zlib";
 import { z } from "zod";
 import type { App } from "../app.js";
+import { AuthError, SESSION_COOKIE, type Principal } from "../auth.js";
 import { redactConfig } from "../config.js";
-import type { Insight } from "../db/repo.js";
 import { errorFields, log } from "../logger.js";
 import { PLANS } from "../plans.js";
-import {
-  ActionError,
-  BusinessInput,
-  CompetitorInput,
-  PageInput,
-  addCompetitor,
-  addPage,
-  createBusiness,
-  removeCompetitor,
-  removePage,
-  scanBusiness,
-  scanPage,
-  updateBusiness,
-} from "./actions.js";
+import * as A from "./actions.js";
+import { adminOverview } from "./admin.js";
 import { createDemoSite } from "./demo-site.js";
-import { BusinessPage, BusinessesPage, EventsPage, InsightDetailPage, PageDetailPage } from "./views.js";
+import { AdminPage, BusinessPage, BusinessesPage, InsightDetailPage, LoginPage, PageDetailPage, SettingsPage } from "./views.js";
+
+type Env = { Variables: { principal: Principal | undefined } };
+type Ctx = Context<Env>;
 
 const idParam = z.coerce.number().int().positive();
 
 export function createWebApp(app: App) {
-  const web = new Hono({ strict: false });
-  const { repo, events } = app;
+  const web = new Hono<Env>({ strict: false });
+  const { repo, events, auth, cfg } = app;
+  const secure = cfg.publicUrl.startsWith("https://");
 
+  // ---------------- Error handling ----------------
   web.onError((err, c) => {
-    if (err instanceof ActionError) return c.json({ error: err.message }, err.status as 400);
-    if (err instanceof z.ZodError) return c.json({ error: "validation failed", issues: err.issues }, 400);
+    const wantsHtml = !c.req.path.startsWith("/api/") && (c.req.header("accept") ?? "").includes("text/html");
+    if (err instanceof A.ActionError || err instanceof AuthError) {
+      if (wantsHtml && err.status === 404) return c.html(<LoginPage error="Not found." />, 404);
+      return c.json({ error: err.message }, err.status as 400);
+    }
+    if (err instanceof z.ZodError) return c.json({ error: "validation failed", issues: err.issues.map((i) => ({ path: i.path.join("."), message: i.message })) }, 400);
     log.error("unhandled request error", { path: c.req.path, ...errorFields(err) });
     return c.json({ error: "internal error" }, 500);
   });
 
-  // ---------------- Health & meta ----------------
+  // ---------------- Authentication middleware ----------------
+  web.use("*", async (c, next) => {
+    const bearer = c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
+    const principal = bearer ? auth.principalFromApiKey(bearer) : auth.principalFromSession(getCookie(c, SESSION_COOKIE));
+    c.set("principal", principal);
+    await next();
+  });
+
+  const requireAuth = async (c: Ctx, next: Next) => {
+    if (c.get("principal")) return next();
+    if (c.req.path.startsWith("/api/")) return c.json({ error: "authentication required" }, 401);
+    return c.redirect(`/login?next=${encodeURIComponent(c.req.path)}`);
+  };
+  const requireAdmin = async (c: Ctx, next: Next) => {
+    const p = c.get("principal");
+    if (!p) return c.req.path.startsWith("/api/") ? c.json({ error: "authentication required" }, 401) : c.redirect("/login");
+    if (!p.isAdmin) return c.json({ error: "admin only" }, 403);
+    return next();
+  };
+  const P = (c: Ctx): Principal => c.get("principal")!;
+  const id = (c: Ctx, name = "id") => idParam.parse(c.req.param(name));
+
+  // ---------------- Public: health, auth, demo ----------------
   web.get("/health", (c) => {
     let db: "ok" | "error" = "ok";
     try {
@@ -44,224 +64,358 @@ export function createWebApp(app: App) {
     } catch {
       db = "error";
     }
-    return c.json({ status: db === "ok" ? "ok" : "degraded", db, scheduler: app.scheduler.getStatus(), sources: app.sources.types(), analyzer: app.analyzer.name, config: redactConfig(app.cfg) }, db === "ok" ? 200 : 503);
+    const s = app.scheduler.getStatus();
+    const body = { status: db === "ok" ? "ok" : "degraded", db, scheduler: s, analyzer: app.analyzer.name, mail: app.mailer.providerName, version: process.env.npm_package_version ?? "dev" };
+    // Full config only for admins.
+    const p = c.get("principal");
+    return c.json(p?.isAdmin ? { ...body, sources: app.sources.types(), config: redactConfig(cfg) } : body, db === "ok" ? 200 : 503);
+  });
+
+  web.get("/login", (c) => (c.get("principal") ? c.redirect("/") : c.html(<LoginPage />)));
+  web.post("/auth/login", async (c) => {
+    const body = await bodyOf(c);
+    const email = z.string().email().max(254).parse(body.email);
+    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? c.req.header("x-real-ip") ?? null;
+    try {
+      const r = await auth.requestLogin(email, ip);
+      if (isJson(c)) return c.json({ sent: r.sent, ...(r.devLink ? { dev_link: r.devLink } : {}) });
+      return c.html(<LoginPage sent email={email} devLink={r.devLink} />);
+    } catch (err) {
+      if (err instanceof AuthError) return isJson(c) ? c.json({ error: err.message }, err.status) : c.html(<LoginPage error={err.message} />, err.status);
+      throw err;
+    }
+  });
+  web.get("/auth/verify", (c) => {
+    const token = c.req.query("token") ?? "";
+    try {
+      const { sessionToken } = auth.verify(token);
+      setCookie(c, SESSION_COOKIE, sessionToken, { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: cfg.SESSION_DAYS * 86_400 });
+      return c.redirect("/");
+    } catch (err) {
+      if (err instanceof AuthError) return c.html(<LoginPage error={err.message} />, err.status);
+      throw err;
+    }
+  });
+  web.post("/auth/logout", (c) => {
+    auth.logout(getCookie(c, SESSION_COOKIE), c.get("principal"));
+    deleteCookie(c, SESSION_COOKIE, { path: "/" });
+    return c.redirect("/login");
   });
   web.get("/api/plans", (c) => c.json(PLANS));
 
-  // ---------------- Businesses ----------------
-  web.get("/api/businesses", (c) => c.json(repo.listBusinesses()));
-  web.post("/api/businesses", async (c) => c.json(createBusiness(app, BusinessInput.parse(await c.req.json()), actor(c)), 201));
-  web.get("/api/businesses/:id", (c) => {
-    const b = repo.getBusiness(idParam.parse(c.req.param("id")));
-    return b ? c.json(b) : c.json({ error: "not found" }, 404);
-  });
-  web.patch("/api/businesses/:id", async (c) => c.json(updateBusiness(app, idParam.parse(c.req.param("id")), BusinessInput.partial().parse(await c.req.json()), actor(c))));
+  if (cfg.DEMO_SITE_ENABLED) {
+    web.route("/demo", createDemoSite().app);
+    web.get("/robots.txt", (c) => c.text("User-agent: *\nDisallow: /demo/private/\n"));
+  } else {
+    web.get("/robots.txt", (c) => c.text("User-agent: *\nDisallow: /\n"));
+  }
 
-  // ---------------- Competitors & pages ----------------
-  web.get("/api/businesses/:id/competitors", (c) => {
-    const id = idParam.parse(c.req.param("id"));
-    return c.json(repo.listCompetitors(id).map((comp) => ({ ...comp, pages: repo.listPages(comp.id) })));
+  // ---------------- Authenticated JSON API ----------------
+  const api = new Hono<Env>({ strict: false });
+  api.use("*", requireAuth);
+
+  api.get("/me", (c) => {
+    const p = P(c);
+    return c.json({ user: { id: p.user.id, email: p.user.email, is_admin: p.isAdmin }, account: repo.getAccount(p.accountId), actor: p.actor, via: p.via });
   });
-  web.post("/api/businesses/:id/competitors", async (c) => c.json(addCompetitor(app, idParam.parse(c.req.param("id")), CompetitorInput.parse(await c.req.json()), actor(c)), 201));
-  web.delete("/api/competitors/:id", (c) => {
-    removeCompetitor(app, idParam.parse(c.req.param("id")), actor(c));
+
+  api.get("/businesses", (c) => c.json(repo.listBusinesses(P(c).accountId)));
+  api.post("/businesses", async (c) => c.json(A.createBusiness(app, P(c), A.BusinessInput.parse(await c.req.json())), 201));
+  api.get("/businesses/:id", (c) => c.json(A.getBusiness(app, P(c), id(c))));
+  api.patch("/businesses/:id", async (c) => c.json(A.updateBusiness(app, P(c), id(c), A.BusinessPatch.parse(await c.req.json()))));
+  api.delete("/businesses/:id", (c) => {
+    A.deleteBusiness(app, P(c), id(c));
     return c.body(null, 204);
   });
-  web.get("/api/competitors/:id/pages", (c) => c.json(repo.listPages(idParam.parse(c.req.param("id")))));
-  web.post("/api/competitors/:id/pages", async (c) => c.json(addPage(app, idParam.parse(c.req.param("id")), PageInput.parse(await c.req.json()), actor(c)), 201));
-  web.delete("/api/pages/:id", (c) => {
-    removePage(app, idParam.parse(c.req.param("id")), actor(c));
+
+  api.get("/businesses/:id/competitors", (c) => {
+    const p = P(c);
+    A.getBusiness(app, p, id(c));
+    return c.json(repo.listCompetitors(p.accountId, id(c)).map((comp) => ({ ...comp, pages: repo.listPages(p.accountId, comp.id), suggestions: repo.listSuggestions(p.accountId, comp.id) })));
+  });
+  api.post("/businesses/:id/competitors", async (c) => c.json(await A.addCompetitor(app, P(c), id(c), A.CompetitorInput.parse(await c.req.json())), 201));
+  api.delete("/competitors/:id", (c) => {
+    A.removeCompetitor(app, P(c), id(c));
     return c.body(null, 204);
   });
-  web.get("/api/pages/:id/snapshots", (c) => c.json(repo.listSnapshots(idParam.parse(c.req.param("id")))));
-  web.get("/api/snapshots/:id", (c) => {
-    const s = repo.getSnapshot(idParam.parse(c.req.param("id")));
+  api.get("/competitors/:id/pages", (c) => {
+    A.getCompetitor(app, P(c), id(c));
+    return c.json(repo.listPages(P(c).accountId, id(c)));
+  });
+  api.post("/competitors/:id/pages", async (c) => c.json(A.addPage(app, P(c), id(c), A.PageInput.parse(await c.req.json())), 201));
+  api.post("/competitors/:id/discover", async (c) => c.json(await A.discoverForCompetitor(app, P(c), id(c))));
+  api.get("/competitors/:id/suggestions", (c) => {
+    A.getCompetitor(app, P(c), id(c));
+    return c.json(repo.listSuggestions(P(c).accountId, id(c)));
+  });
+  api.post("/suggestions/:id/accept", (c) => c.json(A.resolveSuggestion(app, P(c), id(c), true), 201));
+  api.post("/suggestions/:id/dismiss", (c) => {
+    A.resolveSuggestion(app, P(c), id(c), false);
+    return c.body(null, 204);
+  });
+
+  api.get("/pages/:id", (c) => c.json(A.getPage(app, P(c), id(c))));
+  api.delete("/pages/:id", (c) => {
+    A.removePage(app, P(c), id(c));
+    return c.body(null, 204);
+  });
+  api.post("/pages/:id/pause", (c) => c.json(A.setPagePaused(app, P(c), id(c), true)));
+  api.post("/pages/:id/resume", (c) => c.json(A.setPagePaused(app, P(c), id(c), false)));
+  api.post("/pages/:id/scan", async (c) => c.json(await A.scanPage(app, P(c), id(c))));
+  api.get("/pages/:id/snapshots", (c) => {
+    A.getPage(app, P(c), id(c));
+    return c.json(repo.listSnapshots(P(c).accountId, id(c)));
+  });
+  api.get("/pages/:id/changes", (c) => {
+    A.getPage(app, P(c), id(c));
+    return c.json(repo.listChanges(P(c).accountId, id(c)));
+  });
+  api.get("/snapshots/:id", (c) => {
+    const s = repo.getSnapshot(P(c).accountId, id(c));
     if (!s) return c.json({ error: "not found" }, 404);
     const { raw_gzip, ...rest } = s;
     const raw = c.req.query("raw") === "1" && raw_gzip ? gunzipSync(raw_gzip).toString("utf8") : undefined;
     return c.json({ ...rest, has_raw: !!raw_gzip, ...(raw !== undefined ? { raw } : {}) });
   });
 
-  // ---------------- Scanning ----------------
-  web.post("/api/businesses/:id/scan", async (c) => {
-    const results = await scanBusiness(app, idParam.parse(c.req.param("id")));
+  api.post("/businesses/:id/scan", async (c) => {
+    const results = await A.scanBusiness(app, P(c), id(c));
     return c.json(results.map((r) => ({ page_id: r.page.id, url: r.page.url, ...r.outcome })));
   });
-  web.post("/api/pages/:id/scan", async (c) => c.json(await scanPage(app, idParam.parse(c.req.param("id")))));
-  web.post("/api/scheduler/tick", async (c) => c.json({ processed: await app.scheduler.tick() }));
+  api.post("/businesses/:id/digest/send", async (c) => {
+    const p = P(c);
+    const b = A.getBusiness(app, p, id(c));
+    return c.json(await app.digests.sendFor(b, p.actor, false, true));
+  });
 
-  // ---------------- Changes & insights ----------------
-  web.get("/api/businesses/:id/insights", (c) => {
-    const id = idParam.parse(c.req.param("id"));
-    return c.json(repo.listInsights(id, { includeNoise: c.req.query("include_noise") === "1", limit: Number(c.req.query("limit") ?? 100) }));
+  api.get("/businesses/:id/insights", (c) => {
+    const p = P(c);
+    A.getBusiness(app, p, id(c));
+    const insights = repo.listInsights(p.accountId, id(c), { includeNoise: c.req.query("include_noise") === "1", limit: Math.min(500, Number(c.req.query("limit") ?? 100)) });
+    const fb = repo.feedbackForInsights(p.accountId, insights.map((i) => i.id));
+    return c.json(insights.map((i) => ({ ...i, feedback: fb[i.id] ?? [] })));
   });
-  web.get("/api/insights/:id", (c) => {
-    const i = repo.getInsight(idParam.parse(c.req.param("id")));
-    if (!i) return c.json({ error: "not found" }, 404);
-    return c.json({ ...i, change: repo.getChange(i.change_id) });
+  api.get("/insights/:id", (c) => {
+    const p = P(c);
+    const i = A.getInsight(app, p, id(c));
+    return c.json({ ...i, change: repo.getChange(p.accountId, i.change_id), feedback: repo.feedbackForInsights(p.accountId, [i.id])[i.id] ?? [] });
   });
-  web.post("/api/insights/:id/read", (c) => {
-    repo.markInsightRead(idParam.parse(c.req.param("id")));
+  api.post("/insights/:id/read", (c) => {
+    repo.markInsightRead(P(c).accountId, id(c));
     return c.body(null, 204);
   });
-  web.get("/api/changes/:id", (c) => {
-    const ch = repo.getChange(idParam.parse(c.req.param("id")));
-    return ch ? c.json(ch) : c.json({ error: "not found" }, 404);
+  api.post("/insights/:id/feedback", async (c) => c.json(A.giveFeedback(app, P(c), id(c), A.FeedbackInput.parse(await c.req.json())), 201));
+  api.get("/changes/:id", (c) => {
+    const ch = repo.getChange(P(c).accountId, id(c));
+    return ch ? c.json(ch) : c.json({ error: "change not found" }, 404);
   });
-  web.post("/api/changes/:id/reanalyze", async (c) => {
-    const ch = repo.getChange(idParam.parse(c.req.param("id")));
-    if (!ch) return c.json({ error: "not found" }, 404);
-    const insight = await app.pipeline.analyzeChange(ch);
+  api.post("/changes/:id/reanalyze", async (c) => {
+    const insight = await A.reanalyze(app, P(c), id(c));
     return insight ? c.json(insight) : c.json({ error: "analysis failed" }, 502);
   });
 
-  // ---------------- Events & stats ----------------
-  web.get("/api/events", (c) => {
+  // Tenant-scoped events: an account can audit what happened to its own data.
+  api.get("/events", (c) => {
+    const q = c.req.query();
+    return c.json(events.list({ accountId: P(c).accountId, ...(q.type ? { type: q.type } : {}), ...(q.since ? { since: q.since } : {}), limit: Math.min(500, Number(q.limit ?? 100)) }));
+  });
+
+  // API keys
+  api.get("/api-keys", (c) => c.json(repo.listApiKeys(P(c).accountId).map(({ key_hash, ...k }) => k)));
+  api.post("/api-keys", async (c) => {
+    const p = P(c);
+    if (p.via !== "session") return c.json({ error: "API keys can only be created from a browser session" }, 403);
+    const { name } = z.object({ name: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/) }).parse(await c.req.json());
+    return c.json(auth.createApiKey(p, name), 201);
+  });
+  api.delete("/api-keys/:id", (c) => (auth.revokeApiKey(P(c), id(c)) ? c.body(null, 204) : c.json({ error: "not found" }, 404)));
+
+  // Admin (operator) API
+  api.get("/admin/overview", requireAdmin, (c) => c.json(adminOverview(app)));
+  api.get("/admin/events", requireAdmin, (c) => {
     const q = c.req.query();
     return c.json(
       events.list({
         ...(q.type ? { type: q.type } : {}),
-        ...(q.entity_type ? { entityType: q.entity_type } : {}),
-        ...(q.entity_id ? { entityId: Number(q.entity_id) } : {}),
+        ...(q.result ? { result: q.result as never } : {}),
+        ...(q.account_id ? { accountId: Number(q.account_id) } : {}),
         ...(q.since ? { since: q.since } : {}),
-        limit: Math.min(1000, Number(q.limit ?? 100)),
+        limit: Math.min(1000, Number(q.limit ?? 200)),
       }),
     );
   });
-  web.get("/api/stats", (c) => {
-    const day = new Date(Date.now() - 86_400_000).toISOString();
-    const week = new Date(Date.now() - 7 * 86_400_000).toISOString();
-    const count = (sql: string) => (app.db.prepare(sql).get() as { c: number }).c;
-    return c.json({
-      totals: {
-        businesses: count("SELECT COUNT(*) c FROM businesses"),
-        competitors: count("SELECT COUNT(*) c FROM competitors"),
-        pages: count("SELECT COUNT(*) c FROM monitored_pages WHERE enabled = 1"),
-        snapshots: count("SELECT COUNT(*) c FROM snapshots"),
-        changes: count("SELECT COUNT(*) c FROM changes"),
-        insights: count("SELECT COUNT(*) c FROM insights WHERE matters = 1"),
-        insights_filtered: count("SELECT COUNT(*) c FROM insights WHERE matters = 0"),
-      },
-      last_24h: events.countsSince(day),
-      last_7d: events.countsSince(week),
-      ai_tokens_7d: app.db.prepare("SELECT COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o FROM insights WHERE created_at >= ?").get(week),
-      scheduler: app.scheduler.getStatus(),
-    });
-  });
+  api.post("/admin/scheduler/tick", requireAdmin, async (c) => c.json({ processed: await app.scheduler.tick() }));
+  api.post("/admin/digests/run", requireAdmin, async (c) => c.json({ sent: await app.digests.runDue() }));
+
+  web.route("/api", api);
 
   // ---------------- HTML UI ----------------
-  web.get("/", (c) => c.html(<BusinessesPage businesses={repo.listBusinesses()} />));
-  web.post("/b", async (c) => {
-    const b = createBusiness(app, BusinessInput.parse(await formObject(c.req)), "user");
+  const ui = new Hono<Env>({ strict: false });
+  ui.use("*", requireAuth);
+  const back = (c: Ctx, path: string, flash?: string) => c.redirect(flash ? `${path}?flash=${encodeURIComponent(flash)}` : path);
+  const tryUi = async (c: Ctx, path: string, fn: () => Promise<string | void> | string | void) => {
+    try {
+      const msg = await fn();
+      return back(c, path, msg ?? undefined);
+    } catch (err) {
+      return back(c, path, messageOf(err));
+    }
+  };
+
+  ui.get("/", (c) => {
+    const p = P(c);
+    return c.html(<BusinessesPage principal={p} businesses={repo.listBusinesses(p.accountId)} account={repo.getAccount(p.accountId)!} flash={c.req.query("flash")} />);
+  });
+  ui.post("/b", async (c) => {
+    const b = A.createBusiness(app, P(c), A.BusinessInput.parse(await bodyOf(c)));
     return c.redirect(`/b/${b.id}`);
   });
-  web.get("/b/:id", (c) => {
-    const id = idParam.parse(c.req.param("id"));
-    const business = repo.getBusiness(id);
-    if (!business) return c.notFound();
-    const competitors = repo.listCompetitors(id).map((competitor) => ({ competitor, pages: repo.listPages(competitor.id) }));
+  ui.get("/b/:id", (c) => {
+    const p = P(c);
+    const business = A.getBusiness(app, p, id(c));
+    const competitors = repo.listCompetitors(p.accountId, business.id).map((competitor) => ({ competitor, pages: repo.listPages(p.accountId, competitor.id), suggestions: repo.listSuggestions(p.accountId, competitor.id) }));
     const includeNoise = c.req.query("noise") === "1";
-    const insights = repo.listInsights(id, { includeNoise });
+    const insights = repo.listInsights(p.accountId, business.id, { includeNoise });
+    const feedback = repo.feedbackForInsights(p.accountId, insights.map((i) => i.id));
     const competitorNames = Object.fromEntries(competitors.map(({ competitor }) => [competitor.id, competitor.name]));
-    return c.html(<BusinessPage business={business} competitors={competitors} insights={insights} competitorNames={competitorNames} includeNoise={includeNoise} flash={c.req.query("flash")} />);
+    return c.html(<BusinessPage principal={p} business={business} account={repo.getAccount(p.accountId)!} competitors={competitors} insights={insights} feedback={feedback} competitorNames={competitorNames} includeNoise={includeNoise} flash={c.req.query("flash")} />);
   });
-  web.post("/b/:id/competitors", async (c) => {
-    const id = idParam.parse(c.req.param("id"));
-    const form = await formObject(c.req);
-    const pages = [{ url: String(form.website), kind: "home" as const }];
-    if (form.pricing_url) pages.push({ url: String(form.pricing_url), kind: "pricing" as never });
-    try {
-      addCompetitor(app, id, CompetitorInput.parse({ name: form.name, website: form.website, pages }), "user");
-      return c.redirect(`/b/${id}`);
-    } catch (err) {
-      return c.redirect(`/b/${id}?flash=${encodeURIComponent(messageOf(err))}`);
-    }
+  ui.post("/b/:id/competitors", async (c) => {
+    const bid = id(c);
+    return tryUi(c, `/b/${bid}`, async () => {
+      const form = await bodyOf(c);
+      const r = await A.addCompetitor(app, P(c), bid, A.CompetitorInput.parse({ name: form.name, website: form.website }));
+      return r.suggestions.length ? `Added ${r.competitor.name}. We found ${r.suggestions.length} page(s) worth monitoring — confirm them below.` : `Added ${r.competitor.name}.`;
+    });
   });
-  web.post("/b/:id/scan", async (c) => {
-    const id = idParam.parse(c.req.param("id"));
-    const results = await scanBusiness(app, id);
-    const summary = summarise(results.map((r) => r.outcome.status));
-    return c.redirect(`/b/${id}?flash=${encodeURIComponent(`Scanned ${results.length} page(s): ${summary}`)}`);
+  ui.post("/b/:id/scan", async (c) => {
+    const bid = id(c);
+    return tryUi(c, `/b/${bid}`, async () => {
+      const results = await A.scanBusiness(app, P(c), bid);
+      return `Scanned ${results.length} page(s): ${summarise(results.map((r) => r.outcome.status))}`;
+    });
   });
-  web.post("/competitors/:id/pages", async (c) => {
-    const id = idParam.parse(c.req.param("id"));
-    const competitor = repo.getCompetitor(id);
-    if (!competitor) return c.notFound();
-    try {
-      addPage(app, id, PageInput.parse(await formObject(c.req)), "user");
-      return c.redirect(`/b/${competitor.business_id}`);
-    } catch (err) {
-      return c.redirect(`/b/${competitor.business_id}?flash=${encodeURIComponent(messageOf(err))}`);
-    }
+  ui.post("/b/:id/digest", async (c) => {
+    const bid = id(c);
+    return tryUi(c, `/b/${bid}`, async () => {
+      const form = await bodyOf(c);
+      A.updateBusiness(app, P(c), bid, { digest_enabled: form.enabled === "1" });
+    });
   });
-  web.post("/competitors/:id/delete", (c) => {
-    const id = idParam.parse(c.req.param("id"));
-    const competitor = repo.getCompetitor(id);
-    if (!competitor) return c.notFound();
-    removeCompetitor(app, id, "user");
+  ui.post("/b/:id/digest/send", async (c) => {
+    const bid = id(c);
+    return tryUi(c, `/b/${bid}`, async () => {
+      const p = P(c);
+      const r = await app.digests.sendFor(A.getBusiness(app, p, bid), p.actor, false, true);
+      return r.sent ? `Digest sent to ${r.recipients} recipient(s) via ${app.mailer.providerName} (${r.insightCount} insights).` : "Digest could not be sent; see admin → emails.";
+    });
+  });
+  ui.post("/competitors/:id/pages", async (c) => {
+    const competitor = A.getCompetitor(app, P(c), id(c));
+    return tryUi(c, `/b/${competitor.business_id}`, async () => {
+      A.addPage(app, P(c), competitor.id, A.PageInput.parse(await bodyOf(c)));
+    });
+  });
+  ui.post("/competitors/:id/discover", async (c) => {
+    const competitor = A.getCompetitor(app, P(c), id(c));
+    return tryUi(c, `/b/${competitor.business_id}`, async () => {
+      const s = await A.discoverForCompetitor(app, P(c), competitor.id);
+      return s.length ? `${s.length} suggestion(s) waiting for your confirmation.` : "No additional pages found on their home page.";
+    });
+  });
+  ui.post("/competitors/:id/delete", (c) => {
+    const competitor = A.getCompetitor(app, P(c), id(c));
+    A.removeCompetitor(app, P(c), competitor.id);
     return c.redirect(`/b/${competitor.business_id}`);
   });
-  web.post("/pages/:id/scan", async (c) => {
-    const id = idParam.parse(c.req.param("id"));
-    const ctx = repo.pageContext(id);
-    if (!ctx) return c.notFound();
-    const outcome = await scanPage(app, id);
-    return c.redirect(`/b/${ctx.business.id}?flash=${encodeURIComponent(`Scan result: ${outcome.status}${"message" in outcome ? ` (${outcome.message})` : ""}`)}`);
+  ui.post("/suggestions/:id/:verb", (c) => {
+    const p = P(c);
+    const s = repo.getSuggestion(p.accountId, id(c));
+    if (!s) return c.notFound();
+    const competitor = A.getCompetitor(app, p, s.competitor_id);
+    return tryUi(c, `/b/${competitor.business_id}`, () => {
+      A.resolveSuggestion(app, p, s.id, c.req.param("verb") === "accept");
+    });
   });
-  web.post("/pages/:id/delete", (c) => {
-    const id = idParam.parse(c.req.param("id"));
-    const ctx = repo.pageContext(id);
-    if (!ctx) return c.notFound();
-    removePage(app, id, "user");
-    return c.redirect(`/b/${ctx.business.id}`);
+  ui.post("/pages/:id/:verb", async (c) => {
+    const p = P(c);
+    const page = A.getPage(app, p, id(c));
+    const competitor = A.getCompetitor(app, p, page.competitor_id);
+    const verb = c.req.param("verb");
+    return tryUi(c, `/b/${competitor.business_id}`, async () => {
+      if (verb === "scan") {
+        const o = await A.scanPage(app, p, page.id);
+        return `Scan result: ${o.status}${"message" in o ? ` (${o.message})` : ""}${"confirmAfter" in o ? ` — will confirm after ${o.confirmAfter.slice(0, 16)} UTC` : ""}`;
+      }
+      if (verb === "pause") A.setPagePaused(app, p, page.id, true);
+      else if (verb === "resume") A.setPagePaused(app, p, page.id, false);
+      else if (verb === "delete") A.removePage(app, p, page.id);
+      else throw new A.ActionError(404, "unknown action");
+    });
   });
-  web.get("/pages/:id", (c) => {
-    const id = idParam.parse(c.req.param("id"));
-    const ctx = repo.pageContext(id);
-    if (!ctx) return c.notFound();
-    const latest = repo.latestSnapshot(id);
-    return c.html(<PageDetailPage page={ctx.page} competitor={ctx.competitor} snapshots={repo.listSnapshots(id)} changes={repo.listChanges(id)} latestText={latest?.text ?? null} />);
+  ui.get("/pages/:id", (c) => {
+    const p = P(c);
+    const page = A.getPage(app, p, id(c));
+    const competitor = A.getCompetitor(app, p, page.competitor_id);
+    const latest = repo.latestSnapshot(page.id);
+    return c.html(<PageDetailPage principal={p} page={page} competitor={competitor} snapshots={repo.listSnapshots(p.accountId, page.id)} changes={repo.listChanges(p.accountId, page.id)} latestText={latest?.text ?? null} />);
   });
-  web.get("/insights/:id", (c) => {
-    const insight = repo.getInsight(idParam.parse(c.req.param("id")));
-    if (!insight) return c.notFound();
-    const change = repo.getChange(insight.change_id);
-    const ctx = change ? repo.pageContext(change.page_id) : undefined;
-    if (!change || !ctx) return c.notFound();
-    repo.markInsightRead(insight.id);
-    return c.html(<InsightDetailPage insight={insight} change={change} page={ctx.page} competitor={ctx.competitor} business={ctx.business} />);
+  ui.get("/insights/:id", (c) => {
+    const p = P(c);
+    const insight = A.getInsight(app, p, id(c));
+    const change = repo.getChange(p.accountId, insight.change_id);
+    const page = change ? repo.getPage(p.accountId, change.page_id) : undefined;
+    const competitor = page ? repo.getCompetitor(p.accountId, page.competitor_id) : undefined;
+    const business = competitor ? repo.getBusiness(p.accountId, competitor.business_id) : undefined;
+    if (!change || !page || !competitor || !business) return c.notFound();
+    repo.markInsightRead(p.accountId, insight.id);
+    return c.html(<InsightDetailPage principal={p} insight={insight} change={change} page={page} competitor={competitor} business={business} feedback={repo.feedbackForInsights(p.accountId, [insight.id])[insight.id] ?? []} />);
   });
-  web.post("/insights/:id/reanalyze", async (c) => {
-    const insight = repo.getInsight(idParam.parse(c.req.param("id")));
-    if (!insight) return c.notFound();
-    const change = repo.getChange(insight.change_id)!;
-    const fresh: Insight | null = await app.pipeline.analyzeChange(change);
+  ui.post("/insights/:id/feedback", async (c) => {
+    const p = P(c);
+    const insight = A.getInsight(app, p, id(c));
+    return tryUi(c, `/b/${insight.business_id}`, async () => {
+      A.giveFeedback(app, p, insight.id, A.FeedbackInput.parse(await bodyOf(c)));
+      return "Thanks — feedback recorded.";
+    });
+  });
+  ui.post("/insights/:id/reanalyze", async (c) => {
+    const p = P(c);
+    const insight = A.getInsight(app, p, id(c));
+    const fresh = await A.reanalyze(app, p, insight.change_id);
     return c.redirect(fresh ? `/insights/${fresh.id}` : `/b/${insight.business_id}?flash=analysis+failed`);
   });
-  web.get("/events", (c) => {
-    const day = new Date(Date.now() - 86_400_000).toISOString();
-    return c.html(<EventsPage events={events.list({ limit: 200 })} counts={events.countsSince(day)} />);
+
+  ui.get("/settings", (c) => {
+    const p = P(c);
+    return c.html(<SettingsPage principal={p} account={repo.getAccount(p.accountId)!} users={repo.listUsers(p.accountId)} keys={repo.listApiKeys(p.accountId)} flash={c.req.query("flash")} />);
+  });
+  ui.post("/settings/api-keys", async (c) => {
+    const p = P(c);
+    const form = await bodyOf(c);
+    const name = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/).parse(form.name);
+    const { key } = auth.createApiKey(p, name);
+    return c.html(<SettingsPage principal={p} account={repo.getAccount(p.accountId)!} users={repo.listUsers(p.accountId)} keys={repo.listApiKeys(p.accountId)} newKey={key} />);
+  });
+  ui.post("/settings/api-keys/:id/revoke", (c) => {
+    auth.revokeApiKey(P(c), id(c));
+    return c.redirect("/settings");
   });
 
-  // ---------------- Demo competitor site ----------------
-  if (app.cfg.DEMO_SITE_ENABLED) {
-    web.route("/demo", createDemoSite().app);
-    // robots.txt must live at the origin root; the demo forbids its /demo/private/ area.
-    web.get("/robots.txt", (c) => c.text("User-agent: *\nDisallow: /demo/private/\n"));
-  }
+  ui.get("/admin", requireAdmin, (c) => c.html(<AdminPage principal={P(c)} o={adminOverview(app)} />));
 
+  web.route("/", ui);
   return web;
 }
 
-function actor(c: { req: { header(name: string): string | undefined } }): string {
-  // Agents identify themselves with X-Actor: agent:<name>. Auth comes later.
-  const a = c.req.header("x-actor");
-  return a && /^(agent|user):[\w.-]{1,64}$/.test(a) ? a : "user";
+async function bodyOf(c: Ctx): Promise<Record<string, unknown>> {
+  if (isJson(c)) return (await c.req.json()) as Record<string, unknown>;
+  const body = await c.req.parseBody();
+  return Object.fromEntries(Object.entries(body).filter(([, v]) => v !== "" && v !== undefined));
 }
 
-async function formObject(req: { parseBody(): Promise<Record<string, unknown>> }): Promise<Record<string, unknown>> {
-  const body = await req.parseBody();
-  return Object.fromEntries(Object.entries(body).filter(([, v]) => v !== "" && v !== undefined));
+function isJson(c: Ctx): boolean {
+  return (c.req.header("content-type") ?? "").includes("application/json");
 }
 
 function messageOf(err: unknown): string {

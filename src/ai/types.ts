@@ -33,6 +33,8 @@ export interface AnalysisResult {
   model: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
+  /** Filled in by GuardedAnalyzer from token counts and configured prices. */
+  estimatedCostUsd?: number | null;
 }
 
 export interface Analyzer {

@@ -85,6 +85,9 @@ export function createDemoSite(initial: Partial<DemoState> = {}) {
   });
 
   app.get("/private/secret", (c) => c.html("<p>should never be fetched</p>"));
+  // Returns the given HTTP status; used to exercise status classification (403 -> AUTH_REQUIRED, 429 -> RATE_LIMITED...).
+  app.get("/status/:code", (c) => c.text(`status ${c.req.param("code")}`, Number(c.req.param("code")) as 200));
+  app.get("/spa", (c) => c.html(`<!doctype html><html><head><script>${"x".repeat(25000)}</script></head><body><div id="app"></div></body></html>`));
 
   app.get("/state", (c) => c.json(state));
   app.post("/state", async (c) => {

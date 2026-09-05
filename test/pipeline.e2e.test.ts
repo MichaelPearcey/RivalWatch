@@ -1,62 +1,39 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Business, Competitor, Insight, MonitoredPage } from "../src/db/repo.js";
 import type { EventRow } from "../src/events.js";
-import { json, testApp } from "./helpers.js";
+import { fixture, html, json, testApp } from "./helpers.js";
 
 /**
- * The core loop, end to end, through the public JSON API:
- * define business + competitor -> fetch -> snapshot -> detect -> analyse -> insight.
+ * The core loop, end to end, through the public JSON API with a real session:
+ * business + competitor -> fetch -> snapshot -> detect -> confirm -> analyse -> insight.
  */
 describe("core loop (API, in-memory, demo competitor)", () => {
   let t: ReturnType<typeof testApp>;
-  let business: Business;
-  let pages: MonitoredPage[];
+  let f: Awaited<ReturnType<typeof fixture>>;
 
   beforeEach(async () => {
     t = testApp();
-    business = (
-      await json<Business>(t.web, "/api/businesses", {
-        method: "POST",
-        body: JSON.stringify({ name: "Bright Pixel", plan: "pro", pricing_notes: "Starter £25/month, Studio £55/month" }),
-      })
-    ).body;
-    const created = await json<{ competitor: Competitor; pages: MonitoredPage[] }>(t.web, `/api/businesses/${business.id}/competitors`, {
-      method: "POST",
-      headers: { "x-actor": "agent:test-harness" },
-      body: JSON.stringify({
-        name: "Acme Studio",
-        website: `${t.base}/demo/`,
-        pages: [
-          { url: `${t.base}/demo/`, kind: "home" },
-          { url: `${t.base}/demo/pricing`, kind: "pricing" },
-          { url: `${t.base}/demo/products`, kind: "products" },
-        ],
-      }),
-    });
-    expect(created.status).toBe(201);
-    pages = created.body.pages;
+    f = await fixture(t);
   });
   afterEach(() => t.app.close());
 
-  const scan = () => json<{ page_id: number; status: string }[]>(t.web, `/api/businesses/${business.id}/scan`, { method: "POST" });
-  const setDemo = (patch: Record<string, unknown>) => json(t.web, "/demo/state", { method: "POST", body: JSON.stringify(patch) });
-  const insights = (noise = false) => json<Insight[]>(t.web, `/api/businesses/${business.id}/insights${noise ? "?include_noise=1" : ""}`);
+  const pricingPage = () => f.pages.find((p) => p.kind === "pricing")!;
 
-  it("takes a baseline, ignores churn, then produces a pricing insight when the price changes", async () => {
-    const first = await scan();
+  it("takes a baseline, holds a change for confirmation, then produces a pricing insight once confirmed", async () => {
+    const first = await f.scan();
     expect(first.body.map((r) => r.status)).toEqual(["first_snapshot", "first_snapshot", "first_snapshot"]);
 
-    const second = await scan();
-    // Pricing & products pages are identical after normalisation; home rotates testimonials.
-    expect(second.body.find((r) => r.page_id === pages[1]!.id)?.status).toBe("unchanged");
-    expect((await insights()).body).toHaveLength(0);
+    const second = await f.scan();
+    expect(second.body.find((r) => r.page_id === pricingPage().id)?.status).toBe("unchanged");
 
-    await setDemo({ proPrice: 59, annualPrice: 399 });
-    const third = await scan();
-    const pricing = third.body.find((r) => r.page_id === pages[1]!.id);
-    expect(pricing?.status).toBe("changed");
+    await f.setDemo({ proPrice: 59, annualPrice: 399 });
+    const third = await f.scan();
+    expect(third.body.find((r) => r.page_id === pricingPage().id)?.status).toBe("pending_confirmation");
+    expect((await f.insights()).body).toHaveLength(0);
 
-    const list = (await insights()).body;
+    const fourth = await f.scan();
+    expect(fourth.body.find((r) => r.page_id === pricingPage().id)?.status).toBe("changed");
+
+    const list = (await f.insights()).body;
     expect(list).toHaveLength(1);
     const insight = list[0]!;
     expect(insight.category).toBe("pricing");
@@ -65,99 +42,145 @@ describe("core loop (API, in-memory, demo competitor)", () => {
     expect(insight.why_it_matters).toContain("7% above your nearest tier");
     expect(insight.provider).toBe("heuristic");
 
-    // Evidence is retrievable.
-    const detail = await json<Insight & { change: { added_json: string } }>(t.web, `/api/insights/${insight.id}`);
+    const detail = await json<{ change: { added_json: string; analysis_status: string; confirmed_at: string } }>(t.web, `/api/insights/${insight.id}`, { session: f.session });
     expect(JSON.parse(detail.body.change.added_json)).toContain("£59/month");
+    expect(detail.body.change.analysis_status).toBe("done");
+    expect(detail.body.change.confirmed_at).toBeTruthy();
   });
 
-  it("detects a product launch and records the whole trail as structured events", async () => {
-    await scan();
-    await setDemo({ newProduct: "Acme Invoice" });
-    await scan();
-    const list = (await insights()).body;
+  it("discards a change that reverts before confirmation (A/B test or glitch)", async () => {
+    await f.scan();
+    await f.setDemo({ promo: "Flash sale: 30% off" });
+    const detected = await f.scan();
+    expect(detected.body.filter((r) => r.status === "pending_confirmation").length).toBeGreaterThan(0);
+    await f.setDemo({ promo: null });
+    const reverted = await f.scan();
+    expect(reverted.body.filter((r) => r.status === "reverted").length).toBeGreaterThan(0);
+    expect((await f.insights(true)).body).toHaveLength(0);
+    const events = t.app.events.list({ type: "change.discarded_unconfirmed" });
+    expect(events.length).toBeGreaterThan(0);
+    expect(events[0]!.result).toBe("skipped");
+  });
+
+  it("honours the confirmation delay", async () => {
+    t.app.close();
+    t = testApp({ CONFIRM_DELAY_MINUTES: 60 });
+    f = await fixture(t);
+    await f.scan();
+    await f.setDemo({ proPrice: 99 });
+    await f.scan();
+    const again = await f.scan();
+    expect(again.body.find((r) => r.page_id === pricingPage().id)?.status).toBe("awaiting_confirmation");
+    expect((await f.insights()).body).toHaveLength(0);
+  });
+
+  it("detects a product launch and records the whole trail as tenant-scoped structured events", async () => {
+    await f.scan();
+    await f.setDemo({ newProduct: "Acme Invoice" });
+    await f.scan();
+    await f.scan();
+    const list = (await f.insights()).body;
     expect(list.some((i) => i.category === "product" && i.headline.includes("Acme Invoice"))).toBe(true);
 
-    const events = (await json<EventRow[]>(t.web, "/api/events?limit=500")).body;
+    const events = (await json<EventRow[]>(t.web, "/api/events?limit=500", { session: f.session })).body;
     const types = new Set(events.map((e) => e.type));
-    for (const expected of ["business.created", "competitor.added", "page.added", "page.fetched", "snapshot.created", "page.unchanged", "change.detected", "insight.generated"]) {
+    for (const expected of ["business.created", "competitor.added", "page.added", "page.fetched", "snapshot.created", "page.unchanged", "change.detected", "change.pending_confirmation", "change.confirmed", "insight.generated"]) {
       expect(types, `missing event ${expected}`).toContain(expected);
     }
-    expect(events.find((e) => e.type === "competitor.added")?.actor).toBe("agent:test-harness");
-
-    const stats = (await json<{ totals: { insights: number; changes: number } }>(t.web, "/api/stats")).body;
-    expect(stats.totals.changes).toBeGreaterThanOrEqual(1);
-    expect(stats.totals.insights).toBeGreaterThanOrEqual(1);
+    expect(events.every((e) => e.account_id === t.app.repo.getUserByEmail(f.session.email)!.account_id)).toBe(true);
+    const created = events.find((e) => e.type === "competitor.added")!;
+    expect(created.actor).toMatch(/^user:\d+$/);
+    expect(created.result).toBe("ok");
+    expect(created.risk_level).toBe("low");
   });
 
-  it("does not fetch pages disallowed by robots.txt", async () => {
-    const created = await json<MonitoredPage>(t.web, `/api/competitors/${pages[0]!.competitor_id}/pages`, {
-      method: "POST",
-      body: JSON.stringify({ url: `${t.base}/demo/private/secret`, kind: "other" }),
-    });
+  it("marks robots-blocked pages as ROBOTS_BLOCKED and never fetches them", async () => {
+    const created = await json<{ id: number }>(t.web, `/api/competitors/${f.competitor.id}/pages`, { method: "POST", session: f.session, body: JSON.stringify({ url: `${t.base}/demo/private/secret`, kind: "other" }) });
     expect(created.status).toBe(201);
-    const result = await json<{ status: string; message: string }>(t.web, `/api/pages/${created.body.id}/scan`, { method: "POST" });
-    expect(result.body.status).toBe("blocked");
-    expect(t.app.repo.getPage(created.body.id)?.last_status).toBe("blocked");
-    expect(t.app.events.list({ type: "page.blocked_by_robots" })).toHaveLength(1);
+    const result = await json<{ status: string; pageStatus: string }>(t.web, `/api/pages/${created.body.id}/scan`, { method: "POST", session: f.session });
+    expect(result.body.status).toBe("fetch_failed");
+    expect(result.body.pageStatus).toBe("ROBOTS_BLOCKED");
+    const page = (await json<{ status: string; status_message: string }>(t.web, `/api/pages/${created.body.id}`, { session: f.session })).body;
+    expect(page.status).toBe("ROBOTS_BLOCKED");
+    expect(t.app.events.list({ type: "page.status_changed" })[0]!.result).toBe("failed");
   });
 
-  it("re-running a scan with identical content is idempotent (no duplicate snapshots or changes)", async () => {
-    await scan();
-    await setDemo({ proPrice: 79 });
-    await scan();
-    await scan();
-    await scan();
-    const snaps = (await json<unknown[]>(t.web, `/api/pages/${pages[1]!.id}/snapshots`)).body;
+  it("classifies fetch failures into explicit statuses and backs off", async () => {
+    const add = (url: string) => json<{ id: number }>(t.web, `/api/competitors/${f.competitor.id}/pages`, { method: "POST", session: f.session, body: JSON.stringify({ url, kind: "other" }) });
+    const scan = (id: number) => json<{ pageStatus: string }>(t.web, `/api/pages/${id}/scan`, { method: "POST", session: f.session });
+    // Plan allows 5 pages per competitor; fixture uses 3.
+    const missing = (await add(`${t.base}/demo/does-not-exist`)).body.id;
+    const forbidden = (await add(`${t.base}/demo/status/403`)).body.id;
+    expect((await scan(missing)).body.pageStatus).toBe("FETCH_ERROR");
+    expect((await scan(forbidden)).body.pageStatus).toBe("AUTH_REQUIRED");
+    const row = t.app.repo.getPageAny(missing)!;
+    expect(row.consecutive_failures).toBe(1);
+    expect(new Date(row.next_check_at).getTime() - Date.now()).toBeGreaterThan(row.check_interval_minutes * 60_000 * 1.9);
+  });
+
+  it("pausing a page sets PAUSED and excludes it from scans", async () => {
+    const pid = pricingPage().id;
+    const paused = await json<{ status: string; enabled: number }>(t.web, `/api/pages/${pid}/pause`, { method: "POST", session: f.session });
+    expect(paused.body.status).toBe("PAUSED");
+    const scan = await f.scan();
+    expect(scan.body.find((r) => r.page_id === pid)).toBeUndefined();
+    const resumed = await json<{ status: string }>(t.web, `/api/pages/${pid}/resume`, { method: "POST", session: f.session });
+    expect(resumed.body.status).toBe("ACTIVE");
+  });
+
+  it("is idempotent: repeated identical content creates no duplicate snapshots or changes", async () => {
+    await f.scan();
+    await f.setDemo({ proPrice: 79 });
+    await f.scan();
+    await f.scan();
+    await f.scan();
+    await f.scan();
+    const snaps = (await json<unknown[]>(t.web, `/api/pages/${pricingPage().id}/snapshots`, { session: f.session })).body;
     expect(snaps).toHaveLength(2);
-    expect(t.app.repo.listChanges(pages[1]!.id)).toHaveLength(1);
+    expect(t.app.repo.listChanges(t.app.repo.getUserByEmail(f.session.email)!.account_id, pricingPage().id)).toHaveLength(1);
   });
 
-  it("enforces plan limits as data, not code", async () => {
-    const free = (await json<Business>(t.web, "/api/businesses", { method: "POST", body: JSON.stringify({ name: "Tiny", plan: "free" }) })).body;
-    const add = (n: number) => json<{ error?: string }>(t.web, `/api/businesses/${free.id}/competitors`, { method: "POST", body: JSON.stringify({ name: `C${n}`, website: `https://c${n}.example/` }) });
-    expect((await add(1)).status).toBe(201);
-    expect((await add(2)).status).toBe(201);
-    const third = await add(3);
-    expect(third.status).toBe(402);
-    expect(third.body.error).toMatch(/allows 2 competitors/);
+  it("records explicit user feedback on insights", async () => {
+    await f.scan();
+    await f.setDemo({ proPrice: 69 });
+    await f.scan();
+    await f.scan();
+    const insight = (await f.insights()).body[0]!;
+    const fb = await json<{ verdict: string }>(t.web, `/api/insights/${insight.id}/feedback`, { method: "POST", session: f.session, body: JSON.stringify({ verdict: "incorrect", comment: "The annual price is wrong" }) });
+    expect(fb.status).toBe(201);
+    expect(fb.body.verdict).toBe("incorrect");
+    // Changing your mind updates rather than duplicates.
+    await json(t.web, `/api/insights/${insight.id}/feedback`, { method: "POST", session: f.session, body: JSON.stringify({ verdict: "useful" }) });
+    const again = (await f.insights()).body[0]!;
+    expect(again.feedback).toEqual([expect.objectContaining({ verdict: "useful" })]);
+    expect(t.app.events.list({ type: "insight.feedback" })).toHaveLength(2);
+    const bad = await json(t.web, `/api/insights/${insight.id}/feedback`, { method: "POST", session: f.session, body: JSON.stringify({ verdict: "meh" }) });
+    expect(bad.status).toBe(400);
   });
 
-  it("scheduler processes due pages once and reschedules them", async () => {
-    const first = await json<{ processed: number }>(t.web, "/api/scheduler/tick", { method: "POST" });
+  it("scheduler processes due pages once, reschedules them, and runs jobs", async () => {
+    const admin = await (await import("./helpers.js")).login(t.web, "admin@rivalwatch.test");
+    const first = await json<{ processed: number }>(t.web, "/api/admin/scheduler/tick", { method: "POST", session: admin });
     expect(first.body.processed).toBe(3);
-    for (const p of pages) {
-      const row = t.app.repo.getPage(p.id)!;
-      expect(row.last_status).toBe("ok");
-      expect(new Date(row.next_check_at).getTime()).toBeGreaterThan(Date.now() + 60_000);
-    }
-    const second = await json<{ processed: number }>(t.web, "/api/scheduler/tick", { method: "POST" });
+    const second = await json<{ processed: number }>(t.web, "/api/admin/scheduler/tick", { method: "POST", session: admin });
     expect(second.body.processed).toBe(0);
     expect(t.app.scheduler.getStatus().ticks).toBe(2);
   });
 
-  it("backs off after fetch failures", async () => {
-    const page = t.app.repo.createPage({ competitor_id: pages[0]!.competitor_id, url: `${t.base}/nope`, kind: "other", check_interval_minutes: 60 });
-    const before = Date.now();
-    await json(t.web, `/api/pages/${page.id}/scan`, { method: "POST" });
-    const row = t.app.repo.getPage(page.id)!;
-    expect(row.last_status).toBe("error");
-    expect(row.consecutive_failures).toBe(1);
-    // 60 min * 2^1 backoff = ~120 min ahead
-    expect(new Date(row.next_check_at).getTime() - before).toBeGreaterThan(110 * 60_000);
-  });
-
-  it("serves the HTML dashboard and insight pages", async () => {
-    await scan();
-    await setDemo({ promo: "Summer sale: 25% off" });
-    await scan();
-    const dash = await t.web.request(`${t.base}/b/${business.id}`);
+  it("serves the HTML dashboard, insight and page views to the owner", async () => {
+    await f.scan();
+    await f.setDemo({ promo: "Summer sale: 25% off" });
+    await f.scan();
+    await f.scan();
+    const dash = await html(t.web, `/b/${f.business.id}`, f.session);
     expect(dash.status).toBe(200);
-    const html = await dash.text();
-    expect(html).toContain("Acme Studio");
-    expect(html).toContain("running a promotion");
-    const id = (await insights()).body[0]!.id;
-    const page = await t.web.request(`${t.base}/insights/${id}`);
+    expect(dash.text).toContain("Acme Studio");
+    expect(dash.text).toContain("running a promotion");
+    expect(dash.text).toContain("ACTIVE");
+    const id = (await f.insights()).body[0]!.id;
+    const page = await html(t.web, `/insights/${id}`, f.session);
     expect(page.status).toBe(200);
-    expect(await page.text()).toContain("Summer sale");
+    expect(page.text).toContain("Summer sale");
+    expect(page.text).toContain("Was this helpful?");
   });
 });

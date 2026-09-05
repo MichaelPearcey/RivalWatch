@@ -88,3 +88,92 @@ and plan limits as data so billing can attach later. Email/alerts are a future
 `notifications` module reading `insights`.
 
 **Consequences.** MVP is single-tenant and must not be exposed publicly.
+*Superseded by ADR-008..013 (Phase 1).*
+
+## ADR-008: Accounts as the tenant boundary; account_id denormalised onto every row
+
+**Context.** Phase 1 requires every business, competitor, page, snapshot,
+change, insight and event to be tenant-scoped, and the API must make
+cross-tenant access impossible by construction.
+
+**Decision.** `accounts` own `users` (1..n) and all data. Every tenant-owned
+table carries `account_id`; every `Repo` read of such a row takes `accountId`
+and filters on it. Cross-tenant methods are suffixed `*Any` and used only by
+the scheduler and admin views. Plans live on the account.
+
+**Consequences.** Slight redundancy (a snapshot's account is derivable from its
+page) buys simple, auditable SQL and cheap per-tenant queries. Existing rows
+were backfilled into a "Legacy" account (id 1) by migration 002.
+
+## ADR-009: Passwordless magic-link auth, opaque hashed tokens, no signing secret
+
+**Context.** Non-technical users; no desire to store passwords; no time for
+OAuth. Sessions must survive restarts.
+
+**Decision.** Login token and session token are 256-bit random values stored
+SHA-256 hashed in SQLite, single-use/expiring for login, 30-day for sessions,
+cookie `HttpOnly; SameSite=Lax; Secure` (when PUBLIC_URL is https). Rate limit
+5 links/email/hour. API keys (`rw_…`) use the same hashing and authenticate as
+`agent:<name>`. Admins are users whose email is in `ADMIN_EMAILS` (or granted
+via CLI); the flag is never silently revoked.
+
+**Consequences.** No `SESSION_SECRET` to rotate; revocation is a row delete.
+SameSite=Lax gives CSRF protection for form POSTs without tokens (known
+limitation: not defence-in-depth). Email deliverability becomes critical.
+
+## ADR-010: Confirm every detected change on a later fetch
+
+**Context.** A/B tests, transient error pages and half-deployed edits cause
+false positives that would destroy trust in the product.
+
+**Decision.** All changes above the noise threshold are stored as
+`pending_confirmation` and the page is re-fetched after `CONFIRM_DELAY_MINUTES`
+(default 60). Same content ⇒ confirmed and analysed. Reverted ⇒
+`discarded_unconfirmed` (event result `skipped`). Changed again ⇒ old pending
+discarded, new one opened.
+
+**Consequences.** Insights arrive ~1 hour later; one extra fetch per change;
+zero LLM spend on flapping content. Simpler and more predictable than trying to
+classify "suspicious" changes.
+
+## ADR-011: Explicit monitoring status; failure is never shown as healthy
+
+**Context.** The owner requires ACTIVE / ROBOTS_BLOCKED / AUTH_REQUIRED /
+RATE_LIMITED / FETCH_ERROR / CONTENT_UNREADABLE / PAUSED and that failed
+monitoring is never treated as healthy.
+
+**Decision.** `FetchFailureReason` maps 1:1 to statuses. 401/403 ⇒
+AUTH_REQUIRED, 429/503 ⇒ RATE_LIMITED, non-HTML or JS-only pages ⇒
+CONTENT_UNREADABLE, robots.txt ⇒ ROBOTS_BLOCKED, other ⇒ FETCH_ERROR. Every
+transition emits `page.status_changed` (result `failed`, risk `medium` when
+unhealthy). Unhealthy pages are surfaced on the dashboard, in digests and in
+the admin view; exponential backoff applies.
+
+## ADR-012: Email behind a `MailProvider` interface; Resend via plain HTTPS
+
+**Decision.** `LogMailProvider` (default; stores the body in the `emails`
+table) and `ResendMailProvider` (no SDK). Every email is recorded and emits
+`email.sent`/`email.failed` with a masked recipient. Digest = one job in the
+scheduler, per business, weekly at `DIGEST_WEEKDAY`/`DIGEST_HOUR_UTC`, skipped
+(with an event) when there is nothing to report and all pages are healthy.
+
+## ADR-013: Railway, single replica, SQLite on a volume
+
+**Context.** Owner chose Railway (2026-09-05). Constraint: preserve the
+single-process architecture.
+
+**Decision.** Dockerfile + `railway.json`, `numReplicas: 1`, volume at `/data`.
+No Postgres, no Redis, no worker. See `docs/07-deployment.md`.
+
+**Consequences.** Zero-downtime deploys are not guaranteed (single instance);
+acceptable for MVP testing. Scaling beyond one instance requires extracting the
+scheduler first.
+
+## ADR-014: Audit format on events
+
+**Decision.** `events` gained `account_id, risk_level, requested_by,
+approved_by, result, estimated_cost_usd`. Mapping to the required audit shape:
+actor→`actor`, action→`type`, target→`entity_type/entity_id`,
+metadata→`payload`, timestamp→`ts`. `approval.*` and `agent.action` types are
+reserved for the Manager AI layer; nothing writes `approved_by` yet except the
+CLI `make-admin` path (`requested_by=cli`).

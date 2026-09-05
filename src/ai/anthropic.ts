@@ -27,13 +27,9 @@ export class AnthropicAnalyzer implements Analyzer {
         max_tokens: 600,
         temperature: 0.2,
         system: SYSTEM_PROMPT,
-        messages: [
-          { role: "user", content: user },
-          // Prefill to force a JSON object.
-          { role: "assistant", content: "{" },
-        ],
+        messages: [{ role: "user", content: user }],
       });
-      const text = "{" + res.content.map((c) => ("text" in c ? c.text : "")).join("");
+      const text = res.content.map((c) => ("text" in c ? c.text : "")).join("");
       try {
         const json = JSON.parse(extractJsonObject(text));
         const draft = InsightDraftSchema.parse(json);

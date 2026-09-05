@@ -10,7 +10,7 @@ const web = createWebApp(app);
 
 const server = serve({ fetch: web.fetch, port: cfg.PORT, hostname: cfg.HOST }, (info) => {
   log.info("rivalwatch listening", { url: `http://${cfg.HOST}:${info.port}`, config: redactConfig(cfg) });
-  app.events.record({ type: "app.started", payload: { port: info.port, analyzer: app.analyzer.name, scheduler: cfg.SCHEDULER_ENABLED } });
+  app.events.record({ type: "app.started", payload: { port: info.port, analyzer: app.analyzer.name, mail: app.mailer.providerName, scheduler: cfg.SCHEDULER_ENABLED, env: cfg.NODE_ENV } });
   if (cfg.SCHEDULER_ENABLED) app.scheduler.start();
 });
 

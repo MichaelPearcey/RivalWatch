@@ -36,8 +36,13 @@ src/
     index.ts             open DB, run migrations
     migrations/*.sql     numbered plain-SQL migrations
     repo.ts              typed data access (businesses, competitors, pages, snapshots, changes, insights)
-  events.ts              structured business/agent event log (the audit + metrics feed)
+  events.ts              structured audit/event log (actor, action, target, risk, result, cost)
   plans.ts               plan definitions (limits as data)
+  auth.ts                magic links, sessions, API keys, admin flag
+  digest.ts              weekly digest composition + job
+  mail/index.ts          MailProvider interface: log + Resend; Mailer records every email
+  sources/website/discover.ts   home-page link ranking -> page suggestions
+  web/admin.ts           owner/operator overview aggregation
   sources/
     types.ts             Source adapter contract (website now; social later)
     website/
@@ -66,13 +71,19 @@ docs/                    this documentation
 ## Domain model
 
 ```
-Business  1--*  Competitor  1--*  MonitoredPage  1--*  Snapshot
-                                         |
-                                         1--*  Change (from_snapshot -> to_snapshot)
-                                                  |
-                                                  0..1  Insight  (shown to the user)
-Event     (append-only; references any entity by type+id)
+Account 1--* User (email, is_admin)          Account 1--* ApiKey (agent:<name>)
+Account 1--* Business 1--* Competitor 1--* MonitoredPage (status) 1--* Snapshot
+                                   |               |
+                                   1--* PageSuggestion   1--* Change (pending_confirmation -> done | discarded_unconfirmed)
+                                                                    |
+                                                                    0..1 Insight 1--* InsightFeedback
+Event  (append-only audit: actor, type=action, entity=target, account_id, risk_level, result, estimated_cost_usd, payload)
+Email  (every message sent, per provider)   LoginToken / Session (hashed tokens)
 ```
+
+Every tenant-owned table carries `account_id`; see ADR-008. Page `status` is
+one of ACTIVE, ROBOTS_BLOCKED, AUTH_REQUIRED, RATE_LIMITED, FETCH_ERROR,
+CONTENT_UNREADABLE, PAUSED (ADR-011).
 
 - **Business**: the customer's own company (name, website, description, own
   pricing notes). The description and pricing are fed to the analyser so
@@ -101,17 +112,20 @@ Event     (append-only; references any entity by type+id)
 scheduler tick
   -> pages where next_check_at <= now (ordered by due time, bounded batch)
   -> for each page: pipeline.processPage(page)
-       fetch (robots, UA, timeout)                 event: page.fetched | page.fetch_failed
+       fetch (robots, UA, timeout)                 event: page.fetched | page.fetch_failed (-> status)
        extract text
+       if a change is pending confirmation:
+         same as pending content & delay elapsed   event: change.confirmed -> analyse -> insight
+         reverted to previous content              event: change.discarded_unconfirmed
        compare hash with latest snapshot
          same  -> touch last_seen_at               event: page.unchanged
          diff  -> store snapshot                   event: snapshot.created
                   detect(prevText, newText)
                     below noise threshold          event: change.ignored_noise
-                    else store Change               event: change.detected
-                         analyse(change, context)   event: insight.generated | ai.call | ai.failed
-                         store Insight
-       schedule next_check_at
+                    else store Change (pending_confirmation) and re-check after CONFIRM_DELAY_MINUTES
+                                                   event: change.detected, change.pending_confirmation
+       schedule next_check_at (+ exponential backoff on failure), update page.status
+  -> jobs: weekly digests (digest.sent | digest.skipped), auth token purge
 ```
 
 Scans are idempotent per (page, content hash), so re-running after a crash is

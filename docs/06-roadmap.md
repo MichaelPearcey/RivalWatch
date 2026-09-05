@@ -12,15 +12,23 @@ Rough order. Each item should be small enough for a single Devin session.
 - [x] JSON API + minimal server-rendered UI
 - [x] Demo competitor site, seed, tests, docs
 
-## Phase 1 - Make it useful for a real first user
+## Phase 1 - Deployable multi-tenant product for real-world testing (done)
 
-- [ ] Competitor page auto-discovery (pricing / products / blog links from home page)
-- [ ] "Confirm on next fetch" for medium-significance changes (A/B-test noise)
-- [ ] Insight feedback (useful / not useful) recorded as events; use to tune prompts
-- [ ] Re-analyse endpoint and prompt versioning
-- [ ] Weekly digest email (Resend) + per-insight alerts for importance >= 4
-- [ ] Magic-link auth, multi-tenant scoping, plan limits enforced from `plans.ts`
-- [ ] Deploy to Fly.io with Litestream backups; CI on GitHub Actions
+- [x] Competitor page auto-discovery with user confirmation
+- [x] "Confirm on next fetch" for all detected changes (A/B-test noise)
+- [x] Insight feedback (useful / not useful / incorrect / too noisy) as events
+- [x] Re-analyse endpoint and prompt versioning
+- [x] Weekly digest email behind a provider interface (log + Resend)
+- [x] Magic-link auth, accounts, API keys, tenant scoping on every row
+- [x] Explicit monitoring statuses; failures never shown as healthy
+- [x] Anthropic provider with daily call + cost caps and per-call cost logging
+- [x] Owner/admin dashboard (users, pages, fetch health, insights, LLM cost, errors, emails)
+- [x] Dockerfile + Railway config + deployment/secrets docs
+- [ ] Per-insight alert emails for importance >= 4 (Pro)
+- [ ] CI on GitHub Actions (`npm run check`)
+- [ ] Litestream/scheduled SQLite backups
+- [ ] Snapshot retention (drop raw HTML after N days)
+- [ ] Headless-browser fallback for CONTENT_UNREADABLE pages
 
 ## Phase 2 - Paid product
 
