@@ -1,0 +1,37 @@
+{
+  "name": "rivalwatch",
+  "version": "0.1.0",
+  "description": "RivalWatch - AI-filtered competitor monitoring for small businesses",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "node --disable-warning=ExperimentalWarning --import tsx --watch src/index.ts",
+    "start": "node --disable-warning=ExperimentalWarning dist/index.js",
+    "build": "tsc -p tsconfig.json && node -e \"require('fs').cpSync('src/db/migrations','dist/db/migrations',{recursive:true})\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run typecheck && npm test",
+    "cli": "node --disable-warning=ExperimentalWarning --import tsx src/cli.ts",
+    "demo": "node --disable-warning=ExperimentalWarning --import tsx src/cli.ts demo"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
+    "@hono/node-server": "^2.1.1",
+    "cheerio": "^1.2.0",
+    "diff": "^9.0.0",
+    "hono": "^4.13.7",
+    "robots-parser": "^3.0.1",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.0"
+  }
+}
