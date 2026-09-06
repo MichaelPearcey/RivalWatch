@@ -1,5 +1,5 @@
 import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { z } from "zod";
 
 /** Minimal .env loader (no dependency). Does not override existing env vars. */
@@ -86,7 +86,7 @@ const ConfigSchema = z.object({
 
   /** Nightly SQLite backups (VACUUM INTO + gzip) kept on the volume and optionally uploaded to S3-compatible storage. */
   BACKUP_ENABLED: bool(true),
-  BACKUP_DIR: z.string().default("./data/backups"),
+  BACKUP_DIR: z.string().optional(), // default: <dir of DATABASE_PATH>/backups, so backups land on the same persistent volume
   BACKUP_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(3),
   BACKUP_KEEP_LOCAL: z.coerce.number().int().min(1).default(7),
   BACKUP_S3_BUCKET: z.string().optional(),
@@ -115,7 +115,7 @@ const ConfigSchema = z.object({
   DEMO_SITE_ENABLED: bool(false),
 });
 
-export type Config = z.infer<typeof ConfigSchema> & { HOST: string; isProduction: boolean; publicUrl: string };
+export type Config = Omit<z.infer<typeof ConfigSchema>, "BACKUP_DIR"> & { HOST: string; isProduction: boolean; publicUrl: string; BACKUP_DIR: string };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (env === process.env) loadDotenv();
@@ -132,6 +132,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     // Bind to all interfaces in containers (platform injects PORT), loopback locally.
     HOST: c.HOST ?? (isProduction ? "0.0.0.0" : "127.0.0.1"),
     publicUrl: (c.PUBLIC_URL ?? `http://127.0.0.1:${c.PORT}`).replace(/\/$/, ""),
+    BACKUP_DIR: c.BACKUP_DIR ?? (c.DATABASE_PATH === ":memory:" ? "./data/backups" : join(dirname(c.DATABASE_PATH), "backups")),
   };
   if (cfg.AI_PROVIDER === "anthropic" && !cfg.ANTHROPIC_API_KEY) throw new ConfigError("AI_PROVIDER=anthropic requires ANTHROPIC_API_KEY");
   if (cfg.EMAIL_PROVIDER === "resend" && !cfg.RESEND_API_KEY) throw new ConfigError("EMAIL_PROVIDER=resend requires RESEND_API_KEY");

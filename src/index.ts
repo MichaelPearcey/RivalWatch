@@ -29,13 +29,32 @@ const server = serve({ fetch: web.fetch, port: cfg.PORT, hostname: cfg.HOST }, (
   if (cfg.SCHEDULER_ENABLED) app.scheduler.start();
 });
 
+let stopping = false;
 function shutdown(signal: string): void {
+  if (stopping) return;
+  stopping = true;
   log.info("shutting down", { signal });
-  server.close(() => {
-    app.close();
-    process.exit(0);
-  });
-  setTimeout(() => process.exit(1), 5000).unref();
+  const finish = (code: number) => {
+    try {
+      app.close();
+    } catch {
+      /* already closed */
+    }
+    process.exit(code);
+  };
+  server.close(() => finish(0));
+  // Long-lived requests (e.g. the founder chat waiting on the model) would otherwise hold the process open
+  // past the platform's grace period. Cut them after a few seconds; a forced-but-orderly stop is exit 0, not a crash.
+  setTimeout(() => {
+    log.warn("forcing shutdown with connections still open", { signal });
+    (server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();
+    finish(0);
+  }, 4000).unref();
 }
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("unhandledRejection", (reason) => log.error("unhandled promise rejection", { error: reason instanceof Error ? reason.message : String(reason), stack: reason instanceof Error ? reason.stack : undefined }));
+process.on("uncaughtException", (err) => {
+  log.error("uncaught exception; exiting", { error: err.message, stack: err.stack });
+  process.exit(1);
+});
