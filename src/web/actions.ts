@@ -61,26 +61,19 @@ function notFound(what: string): never {
 // ---------- Operator (admin) actions ----------
 
 /**
- * Tier-3 action: changing what a customer pays for. Only admins may call this,
- * and the audit event records who approved it. Billing will later drive this
- * automatically via the same function.
+ * Tier-3 action: changing what a customer pays for. Goes through the approvals
+ * system like every consequential action; an admin acting directly is modelled
+ * as "request + approve in one step" so the audit trail is identical to the
+ * agent-requested path. Billing will later drive the same action.
  */
-export function setAccountPlan(app: App, admin: Principal, accountId: number, planId: string, reason?: string): { account_id: number; plan: string } {
+export async function setAccountPlan(app: App, admin: Principal, accountId: number, planId: string, reason?: string): Promise<{ account_id: number; plan: string; approval_id: number }> {
   if (!admin.isAdmin) throw new ActionError(403, "admin only");
   if (!(planId in PLANS)) throw new ActionError(400, `unknown plan "${planId}"; valid: ${Object.keys(PLANS).join(", ")}`);
-  const account = app.repo.getAccount(accountId) ?? notFound("account");
-  app.repo.updateAccountPlan(accountId, planId);
-  app.events.record({
-    type: "account.plan_changed",
-    actor: admin.actor,
-    accountId,
-    entity: { type: "account", id: accountId },
-    riskLevel: "high",
-    requestedBy: admin.actor,
-    approvedBy: admin.actor,
-    payload: { from: account.plan, to: planId, ...(reason ? { reason } : {}) },
-  });
-  return { account_id: accountId, plan: planId };
+  app.repo.getAccount(accountId) ?? notFound("account");
+  const req = app.approvals.request(admin, { action: "account.set_plan", payload: { account_id: accountId, plan: planId }, reason, accountId, target: { type: "account", id: accountId } });
+  const done = await app.approvals.decide(admin, req.id, true, "direct admin action");
+  if (done.status !== "executed") throw new ActionError(500, `plan change failed: ${done.result ?? done.status}`);
+  return { account_id: accountId, plan: planId, approval_id: done.id };
 }
 
 // ---------- Businesses ----------

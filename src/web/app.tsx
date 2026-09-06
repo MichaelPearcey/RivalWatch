@@ -3,6 +3,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { gunzipSync } from "node:zlib";
 import { z } from "zod";
 import type { App } from "../app.js";
+import { ACTIONS, ApprovalError } from "../approvals.js";
 import { AuthError, SESSION_COOKIE, type Principal } from "../auth.js";
 import { redactConfig } from "../config.js";
 import { errorFields, log } from "../logger.js";
@@ -25,7 +26,7 @@ export function createWebApp(app: App) {
   // ---------------- Error handling ----------------
   web.onError((err, c) => {
     const wantsHtml = !c.req.path.startsWith("/api/") && (c.req.header("accept") ?? "").includes("text/html");
-    if (err instanceof A.ActionError || err instanceof AuthError) {
+    if (err instanceof A.ActionError || err instanceof AuthError || err instanceof ApprovalError) {
       if (wantsHtml && err.status === 404) return c.html(<LoginPage error="Not found." />, 404);
       return c.json({ error: err.message }, err.status as 400);
     }
@@ -258,7 +259,32 @@ export function createWebApp(app: App) {
   });
   api.post("/admin/accounts/:id/plan", requireAdmin, async (c) => {
     const { plan, reason } = z.object({ plan: z.string(), reason: z.string().max(500).optional() }).parse(await c.req.json());
-    return c.json(A.setAccountPlan(app, P(c), id(c), plan, reason));
+    return c.json(await A.setAccountPlan(app, P(c), id(c), plan, reason));
+  });
+
+  // Approvals: anyone authenticated may *request*; admins (and later the Manager agent) decide.
+  api.get("/approvals/actions", (c) => c.json(Object.values(ACTIONS).map(({ action, risk, description }) => ({ action, risk, description }))));
+  api.post("/approvals", async (c) => {
+    const p = P(c);
+    const body = z.object({ action: z.string(), payload: z.unknown(), reason: z.string().max(2000).optional(), target: z.object({ type: z.string(), id: z.number().int() }).optional() }).parse(await c.req.json());
+    const a = app.approvals.request(p, { action: body.action, payload: body.payload, reason: body.reason, accountId: p.accountId, target: body.target as never });
+    return c.json({ ...a, summary: app.approvals.describe(a) }, 202);
+  });
+  api.get("/approvals", (c) => {
+    const p = P(c);
+    const status = c.req.query("status") as never;
+    const rows = p.isAdmin ? app.approvals.list({ ...(status ? { status } : {}) }) : app.approvals.list({ accountId: p.accountId, ...(status ? { status } : {}) });
+    return c.json(rows.map((a) => ({ ...a, summary: app.approvals.describe(a) })));
+  });
+  api.get("/approvals/:id", (c) => {
+    const p = P(c);
+    const a = app.approvals.get(id(c));
+    if (!a || (!p.isAdmin && a.account_id !== p.accountId)) return c.json({ error: "not found" }, 404);
+    return c.json({ ...a, summary: app.approvals.describe(a) });
+  });
+  api.post("/approvals/:id/decide", requireAdmin, async (c) => {
+    const { approve, note } = z.object({ approve: z.boolean(), note: z.string().max(2000).optional() }).parse(await c.req.json());
+    return c.json(await app.approvals.decide(P(c), id(c), approve, note));
   });
   api.post("/admin/scheduler/tick", requireAdmin, async (c) => c.json({ processed: await app.scheduler.tick() }));
   api.post("/admin/digests/run", requireAdmin, async (c) => c.json({ sent: await app.digests.runDue() }));
@@ -423,8 +449,17 @@ export function createWebApp(app: App) {
     const aid = id(c);
     return tryUi(c, "/admin", async () => {
       const form = await bodyOf(c);
-      const r = A.setAccountPlan(app, P(c), aid, String(form.plan), form.reason ? String(form.reason) : undefined);
-      return `Account #${r.account_id} is now on the ${PLANS[r.plan]!.name} plan.`;
+      const r = await A.setAccountPlan(app, P(c), aid, String(form.plan), form.reason ? String(form.reason) : undefined);
+      return `Account #${r.account_id} is now on the ${PLANS[r.plan]!.name} plan (approval #${r.approval_id}).`;
+    });
+  });
+  ui.post("/admin/approvals/:id/:verb", requireAdmin, async (c) => {
+    const aid = id(c);
+    const approve = c.req.param("verb") === "approve";
+    return tryUi(c, "/admin", async () => {
+      const form = await bodyOf(c);
+      const a = await app.approvals.decide(P(c), aid, approve, form.note ? String(form.note) : undefined);
+      return `Approval #${a.id} ${a.status}${a.status === "failed" ? `: ${a.result}` : ""}.`;
     });
   });
 

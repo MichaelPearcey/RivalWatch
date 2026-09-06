@@ -1,4 +1,5 @@
 import type { FC } from "hono/jsx";
+import type { Approval } from "../approvals.js";
 import type { Principal } from "../auth.js";
 import type { Account, ApiKey, Business, Change, Competitor, EmailRow, Insight, InsightFeedback, MonitoredPage, PageSuggestion, Snapshot, User } from "../db/repo.js";
 import type { EventRow } from "../events.js";
@@ -537,7 +538,11 @@ export const SettingsPage: FC<{ principal: Principal; account: Account; users: U
   </Layout>
 );
 
+export type ApprovalView = Approval & { summary: string };
+
 export interface AdminOverview {
+  pendingApprovals: ApprovalView[];
+  recentApprovals: ApprovalView[];
   totals: Record<string, number>;
   pagesByStatus: Record<string, number>;
   fetch24h: { fetched: number; failed: number };
@@ -555,6 +560,60 @@ export interface AdminOverview {
 export const AdminPage: FC<{ principal: Principal; o: AdminOverview; flash?: string | undefined }> = ({ principal, o, flash }) => (
   <Layout title="Admin" principal={principal} flash={flash}>
     <h1>Owner dashboard</h1>
+    <div class={`card${o.pendingApprovals.length ? " alert" : ""}`} style={o.pendingApprovals.length ? "" : "border-color:var(--ok)"}>
+      <h2 style="margin-top:0">Needs your attention ({o.pendingApprovals.length})</h2>
+      {o.pendingApprovals.length === 0 ? <p class="muted" style="margin:0">No pending approvals. Agents and admins request consequential actions here; nothing runs until you decide.</p> : null}
+      {o.pendingApprovals.map((a) => (
+        <div class="card" style="margin:.5rem 0">
+          <div class="row">
+            <span class={`badge ${a.risk_level === "high" ? "imp-5" : ""}`}>{a.risk_level} risk</span>
+            <strong>{a.summary}</strong>
+            <span class="muted">
+              #{a.id} · {a.action} · requested by {a.requested_by} · {fmtDate(a.created_at)} · expires {fmtDate(a.expires_at)}
+            </span>
+          </div>
+          {a.reason ? <p style="margin:.3rem 0">Reason: {a.reason}</p> : null}
+          <details>
+            <summary class="muted">payload</summary>
+            <pre>{a.payload}</pre>
+          </details>
+          <div class="row" style="margin-top:.4rem">
+            <form method="post" action={`/admin/approvals/${a.id}/approve`} class="inline">
+              <input name="note" placeholder="note (optional)" style="min-width:16rem" />
+              <button type="submit">Approve &amp; execute</button>
+            </form>
+            <form method="post" action={`/admin/approvals/${a.id}/deny`} class="inline">
+              <input name="note" placeholder="why not? (optional)" style="min-width:16rem" />
+              <button class="danger" type="submit">
+                Deny
+              </button>
+            </form>
+          </div>
+        </div>
+      ))}
+      {o.recentApprovals.length ? (
+        <details style="margin-top:.5rem">
+          <summary class="muted">Recent decisions ({o.recentApprovals.length})</summary>
+          <table>
+            <tbody>
+              {o.recentApprovals.map((a) => (
+                <tr>
+                  <td class="muted">{fmtDate(a.decided_at ?? a.created_at)}</td>
+                  <td>
+                    <span class="badge">{a.status}</span>
+                  </td>
+                  <td>{a.summary}</td>
+                  <td class="muted">
+                    by {a.decided_by ?? "—"} · requested by {a.requested_by}
+                  </td>
+                  <td class="muted">{a.status === "failed" ? a.result : a.decision_note}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      ) : null}
+    </div>
     <div class="card">
       {Object.entries(o.totals).map(([k, v]) => (
         <span class="stat">

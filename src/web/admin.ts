@@ -1,4 +1,5 @@
 import type { App } from "../app.js";
+import type { Approval } from "../approvals.js";
 import type { MonitoredPage, User } from "../db/repo.js";
 import type { AdminOverview } from "./views.js";
 
@@ -31,7 +32,10 @@ export function adminOverview(app: App): AdminOverview {
 
   const aiCost = (since: string) => (db.prepare("SELECT COALESCE(SUM(estimated_cost_usd),0) s FROM events WHERE type = 'ai.call' AND ts >= ?").get(since) as { s: number }).s;
 
+  const describe = (a: Approval) => ({ ...a, summary: app.approvals.describe(a) });
   return {
+    pendingApprovals: app.approvals.list({ status: "pending" }).map(describe),
+    recentApprovals: app.approvals.list({ limit: 20 }).filter((a) => a.status !== "pending").map(describe),
     totals,
     pagesByStatus: repo.countPagesByStatus(),
     fetch24h: { fetched: c1["page.fetched"] ?? 0, failed: (c1["page.fetch_failed"] ?? 0) + (c1["page.blocked_by_robots"] ?? 0) },

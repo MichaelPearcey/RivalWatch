@@ -66,9 +66,11 @@ export type EventType =
   | "agent.action"
   | "approval.requested"
   | "approval.granted"
-  | "approval.denied";
+  | "approval.denied"
+  | "approval.expired"
+  | "approval.execution_failed";
 
-export type EntityType = "account" | "user" | "business" | "competitor" | "page" | "snapshot" | "change" | "insight" | "email" | "api_key" | "suggestion";
+export type EntityType = "account" | "user" | "business" | "competitor" | "page" | "snapshot" | "change" | "insight" | "email" | "api_key" | "suggestion" | "approval";
 export type RiskLevel = "low" | "medium" | "high";
 export type EventResult = "ok" | "failed" | "pending" | "denied" | "skipped";
 

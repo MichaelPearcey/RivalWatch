@@ -169,6 +169,29 @@ No Postgres, no Redis, no worker. See `docs/07-deployment.md`.
 acceptable for MVP testing. Scaling beyond one instance requires extracting the
 scheduler first.
 
+## ADR-015: Approvals as the only path to consequential actions
+
+**Context.** The company will be run by agents. The safety principle requires
+three tiers (autonomous / Manager-AI approval / human approval), auditability,
+and that agents never hold destructive or financial power.
+
+**Decision.** `src/approvals.ts` holds a catalogue of *actions*
+(`account.set_plan`, `page.set_paused`, `email.send`, ...), each with a zod
+payload schema, a risk level (`medium` = Manager agent or human may approve;
+`high` = human only) and an `execute` function. Any principal may *request*
+(`POST /api/approvals`, validated immediately, 202). Admins decide via API or
+the "Needs your attention" inbox in `/admin`; the Manager agent will be
+allowed to decide medium-risk requests. Approval triggers execution **by the
+system** (actor `system`, with `requested_by` and `approved_by` on the audit
+event). Requesters cannot approve their own requests (admins excepted, whose
+direct actions are modelled as request+approve so the trail is identical).
+Pending requests expire after 72h.
+
+**Consequences.** Every new agent capability that changes the world is one
+catalogue entry, automatically gated and audited. Tier-1 (autonomous) actions
+remain plain API calls attributed to `agent:<name>`. Billing will later
+request `account.set_plan` the same way.
+
 ## INCIDENT-001 (2026-09-06): vendor API keys exposed in an agent transcript
 
 **What happened.** While listing Railway variable *names*, an ad-hoc PowerShell

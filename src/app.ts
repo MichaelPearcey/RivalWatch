@@ -1,5 +1,6 @@
 import { createAnalyzer } from "./ai/index.js";
 import type { Analyzer } from "./ai/types.js";
+import { Approvals } from "./approvals.js";
 import { Auth } from "./auth.js";
 import type { Config } from "./config.js";
 import { openAndMigrate, type Db } from "./db/index.js";
@@ -28,6 +29,7 @@ export interface App {
   mailer: Mailer;
   auth: Auth;
   digests: DigestJob;
+  approvals: Approvals;
   close(): void;
 }
 
@@ -61,7 +63,7 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
     .addJob({ name: "digests", run: (now) => digests.runDue(now).then(() => undefined) })
     .addJob({ name: "auth_purge", run: (now) => repo.purgeExpiredAuth(now.toISOString()) });
 
-  return {
+  const app: App = {
     cfg,
     db,
     repo,
@@ -74,9 +76,13 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
     mailer,
     auth,
     digests,
+    approvals: undefined as unknown as Approvals,
     close() {
       scheduler.stop();
       db.close();
     },
   };
+  app.approvals = new Approvals(app);
+  scheduler.addJob({ name: "approvals_expire", run: (now) => void app.approvals.expireStale(now) });
+  return app;
 }
