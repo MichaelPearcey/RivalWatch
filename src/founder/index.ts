@@ -10,6 +10,7 @@ import { createAnthropicClient } from "../ai/anthropic.js";
 import type { App } from "../app.js";
 import type { Principal } from "../auth.js";
 import type { Config } from "../config.js";
+import { slugify } from "../github.js";
 import { errorFields, log } from "../logger.js";
 import { MEMORY_KINDS } from "../memory.js";
 
@@ -73,7 +74,111 @@ const closeRequest: Tool = {
   },
 };
 
-export const FOUNDER_TOOLS: Tool[] = [...READ_TOOLS, searchMemory, remember, closeRequest, requestApproval, writeNote];
+// ---------------- Repo tools (phase B) ----------------
+
+const gh = (ctx: AgentContext) => {
+  if (!ctx.app.github) throw new Error("Repository access is not configured on this server (GITHUB_BOT_TOKEN/GITHUB_REPO).");
+  return ctx.app.github;
+};
+const base = (ctx: AgentContext) => ctx.app.cfg.GITHUB_BASE_BRANCH;
+const PROTECTED_PATHS = /^(\.github\/|Dockerfile$|docker-entrypoint\.sh$|railway\.json$|package(-lock)?\.json$|src\/config\.ts$|src\/auth\.ts$|src\/password\.ts$|src\/approvals\.ts$|src\/github\.ts$|src\/founder\/|src\/db\/migrations\/(00[1-9]|0[1-9]\d)_)/;
+
+const repoListFiles: Tool = {
+  name: "repo_list_files",
+  description: "List files in the product's code repository (main branch), optionally under a path prefix such as 'src/web/' or 'src/i18n/'. Start here to find where something lives.",
+  kind: "read",
+  schema: z.object({ prefix: z.string().max(200).default("") }) as unknown as z.ZodType<unknown>,
+  async run(ctx, input) {
+    const files = await gh(ctx).listFiles(base(ctx), (input as { prefix: string }).prefix);
+    return files.filter((f) => !/^(node_modules|dist|public\/fonts)\//.test(f.path)).slice(0, 400);
+  },
+};
+
+const repoReadFile: Tool = {
+  name: "repo_read_file",
+  description: "Read one file from the repository (main branch, or a branch you created). Read before you edit; edits must reproduce the full new file content.",
+  kind: "read",
+  schema: z.object({ path: z.string().min(1).max(300), branch: z.string().max(120).optional() }) as unknown as z.ZodType<unknown>,
+  async run(ctx, input) {
+    const i = input as { path: string; branch?: string };
+    const f = await gh(ctx).readFile(i.path, i.branch ?? base(ctx));
+    return { path: i.path, size: f.size, content: f.content.length > 60_000 ? f.content.slice(0, 60_000) + "\n… (truncated)" : f.content };
+  },
+};
+
+const repoSearch: Tool = {
+  name: "repo_search",
+  description: "Search the repository's code for a string (e.g. a piece of UI text, a translation key, a function name). Returns file paths with matching fragments.",
+  kind: "read",
+  schema: z.object({ query: z.string().min(2).max(200) }) as unknown as z.ZodType<unknown>,
+  async run(ctx, input) {
+    return gh(ctx).search((input as { query: string }).query);
+  },
+};
+
+const ProposeSchema = z.object({
+  title: z.string().min(5).max(120),
+  description: z.string().min(10).max(4000).describe("What changes and why, for the human reviewer. Mention which request in memory it fulfils."),
+  files: z.array(z.object({ path: z.string().min(1).max(300), content: z.string().max(400_000).nullable().describe("Full new file content, or null to delete the file") })).min(1).max(15),
+  branch: z.string().max(120).optional().describe("Existing founder/* branch to add to; omit to create a new one"),
+});
+const proposeChange: Tool = {
+  name: "propose_change",
+  description:
+    "Propose a code change as a pull request. Provide the FULL new content of every file you change (read them first). Creates a branch founder/<slug>, commits, opens a PR against main and records it in memory. CI (typecheck + tests) runs automatically; check it with pr_status and fix failures by calling propose_change again with the same branch. A human merges via approval - you cannot merge. Never touch auth, config, billing, migrations or CI files; those need Devin.",
+  kind: "write",
+  schema: ProposeSchema as unknown as z.ZodType<unknown>,
+  async run(ctx, input) {
+    const i = input as z.infer<typeof ProposeSchema>;
+    const blocked = i.files.filter((f) => PROTECTED_PATHS.test(f.path));
+    if (blocked.length) throw new Error(`These paths are reserved for the engineering agent: ${blocked.map((b) => b.path).join(", ")}. Save the request to memory instead.`);
+    const github = gh(ctx);
+    const mainBranch = base(ctx);
+    const branch = i.branch ?? `founder/${slugify(i.title)}-${Date.now().toString(36).slice(-4)}`;
+    let existing = i.branch ? await github.branchSha(branch) : null;
+    if (i.branch && !existing) throw new Error(`branch ${branch} not found`);
+    if (!existing) {
+      const head = await github.branchSha(mainBranch);
+      if (!head) throw new Error(`base branch ${mainBranch} not found`);
+      await github.createBranch(branch, head);
+      existing = head;
+    }
+    const commit = await github.commitFiles(branch, `${i.title}\n\n${i.description}\n\nProposed by the RivalWatch founder assistant (conversation ${ctx.runId}).`, i.files);
+    let pr = (await github.listPullRequests("open")).find((p) => p.head === branch);
+    if (!pr) {
+      pr = await github.openPullRequest({ head: branch, base: mainBranch, title: i.title, body: `${i.description}\n\n---\n_Proposed by the RivalWatch founder assistant. Merging requires an approval in /admin; CI must be green._` });
+      ctx.app.memory.add({ author: ctx.actor, kind: "journal", title: `Opened PR #${pr.number}: ${i.title}`, body: `${i.description}\n\n${pr.html_url}`, tags: ["pr", "code"], source: `conversation:${ctx.runId}` });
+    }
+    ctx.app.events.record({ type: "repo.change_proposed", actor: ctx.actor, riskLevel: "medium", payload: { pr: pr.number, url: pr.html_url, branch, files: i.files.map((f) => f.path), commit: commit.sha } });
+    return { pr_number: pr.number, url: pr.html_url, branch, commit: commit.sha, next: "Call pr_status in a minute to see CI results. When green, ask the human to approve the merge (use request_approval with action repo.merge_pr)." };
+  },
+};
+
+const prStatus: Tool = {
+  name: "pr_status",
+  description: "Status of a pull request: open/merged, CI result (pending/success/failure) and, on failure, an excerpt of the failing log so you can fix it.",
+  kind: "read",
+  schema: z.object({ pr_number: z.number().int().positive() }) as unknown as z.ZodType<unknown>,
+  async run(ctx, input) {
+    const github = gh(ctx);
+    const pr = await github.pullRequest((input as { pr_number: number }).pr_number);
+    const ci = await github.ciStatus(pr.head);
+    return { ...pr, ci };
+  },
+};
+
+const listPrs: Tool = {
+  name: "list_pull_requests",
+  description: "List open pull requests in the repository.",
+  kind: "read",
+  schema: z.object({}) as unknown as z.ZodType<unknown>,
+  async run(ctx) {
+    return gh(ctx).listPullRequests("open");
+  },
+};
+
+export const REPO_TOOLS: Tool[] = [repoListFiles, repoReadFile, repoSearch, proposeChange, prStatus, listPrs];
+export const FOUNDER_TOOLS: Tool[] = [...READ_TOOLS, searchMemory, remember, closeRequest, requestApproval, writeNote, ...REPO_TOOLS];
 
 // ---------------- Prompt ----------------
 
@@ -94,7 +199,9 @@ function systemPrompt(app: App, principal: Principal): string {
 
 What you are for:
 - Explain how the product and company work, what has been built, and why (use the docs and memory below; use tools to look at live data).
-- Take requests for changes to the product. You cannot edit code yet. When someone asks for a change, discuss it briefly to make sure you understand, then SAVE it with the remember tool as kind "request" with a clear title, precise body and tags - that is how it reaches Devin, who reads this memory at the start of every engineering session. Tell the user you have done so.
+- Take requests for changes to the product. Two routes:
+  a) SMALL, SAFE changes you can make yourself${app.github ? "" : " (NOT available on this server: repository access is not configured, so always use route b)"}: wording and translations (src/i18n/*.ts - every locale must keep every key), colours/spacing (src/web/theme.ts), landing/pricing copy and layout (src/web/views.tsx), legal text (src/legal.ts), docs. Workflow: repo_search / repo_read_file to find and read the exact files -> propose_change with the FULL new content of each file -> tell the user the PR link -> pr_status after a minute; if CI failed, read the excerpt, fix, propose_change again on the same branch -> when green, request_approval with action "repo.merge_pr" (payload: pr_number, title) so a human merges and it deploys. Keep PRs small and single-purpose. Never guess file contents; if unsure, read more.
+  b) Everything else (features, data model, auth, billing, agents, anything touching money or security, or anything you are not confident about): discuss briefly to make sure you understand, then SAVE it with remember as kind "request" with a clear title, precise body and tags - Devin (the engineering agent) reads this memory at the start of every session. Tell the user you have done so.
 - Record decisions ("decision"), lasting preferences ("preference") and useful facts ("fact") the moment they come up. Prefer several small precise notes over one vague one.
 - Report on business health, agents, approvals and monitoring using the read tools. Quote ids so people can verify.
 - Request consequential actions (plan changes, pausing pages, emails) through request_approval; a human decides.

@@ -75,6 +75,11 @@ const ConfigSchema = z.object({
   FOUNDER_MAX_COST_PER_TURN_USD: z.coerce.number().nonnegative().default(0.5),
   FOUNDER_DAILY_COST_CAP_USD: z.coerce.number().nonnegative().default(5),
 
+  /** Repo access for the founder assistant (fine-grained token: contents+PRs write, actions read). Optional. */
+  GITHUB_BOT_TOKEN: z.string().optional(),
+  GITHUB_REPO: z.string().regex(/^[\w.-]+\/[\w.-]+$/).optional(),
+  GITHUB_BASE_BRANCH: z.string().default("main"),
+
   /** Competitor news via public news feeds, classified by the LLM. */
   NEWS_ENABLED: bool(true),
   NEWS_INTERVAL_HOURS: z.coerce.number().int().min(1).default(24),
@@ -141,7 +146,7 @@ export class ConfigError extends Error {
   readonly name = "ConfigError";
 }
 
-const SECRET_KEYS = ["ANTHROPIC_API_KEY", "RESEND_API_KEY", "BOOTSTRAP_ADMIN_TOKEN", "BACKUP_S3_ACCESS_KEY_ID", "BACKUP_S3_SECRET_ACCESS_KEY"] as const;
+const SECRET_KEYS = ["ANTHROPIC_API_KEY", "RESEND_API_KEY", "BOOTSTRAP_ADMIN_TOKEN", "BACKUP_S3_ACCESS_KEY_ID", "BACKUP_S3_SECRET_ACCESS_KEY", "GITHUB_BOT_TOKEN"] as const;
 
 /** Config with secrets removed, safe to log or expose on /health. */
 export function redactConfig(cfg: Config): Record<string, unknown> {

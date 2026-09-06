@@ -130,6 +130,25 @@ define<z.infer<typeof SendEmailPayload>>({
   },
 });
 
+const MergePrPayload = z.object({ pr_number: z.number().int().positive(), title: z.string().min(1).max(200) });
+define<z.infer<typeof MergePrPayload>>({
+  action: "repo.merge_pr",
+  risk: "high",
+  description: "Merge a pull request into the main branch. Railway deploys main automatically, so this changes the live product.",
+  schema: MergePrPayload,
+  summarise: (p) => `Merge pull request #${p.pr_number} ("${p.title}") and deploy`,
+  async execute(app, _approval, p) {
+    if (!app.github) throw new Error("GitHub is not configured on this server");
+    const pr = await app.github.pullRequest(p.pr_number);
+    if (pr.state !== "open") throw new Error(`PR #${p.pr_number} is ${pr.merged ? "already merged" : "closed"}`);
+    const ci = await app.github.ciStatus(pr.head);
+    if (ci.state === "failure") throw new Error("CI failed on this PR; ask the assistant to fix it before merging");
+    if (ci.state === "pending") throw new Error("CI is still running; approve again once it has passed");
+    const r = await app.github.mergePullRequest(p.pr_number, p.title);
+    return { merged: r.merged, sha: r.sha, url: pr.html_url };
+  },
+});
+
 // ---------------------------------------------------------------------------
 
 export interface RequestInput {

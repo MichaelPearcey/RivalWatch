@@ -12,6 +12,7 @@ import { Repo } from "./db/repo.js";
 import { DigestJob } from "./digest.js";
 import { Events } from "./events.js";
 import { Founder } from "./founder/index.js";
+import { GitHub } from "./github.js";
 import { setLogLevel } from "./logger.js";
 import { Memory } from "./memory.js";
 import { createMailer, type Mailer } from "./mail/index.js";
@@ -45,6 +46,8 @@ export interface App {
   news: NewsMonitor;
   memory: Memory;
   founder: Founder;
+  /** Repo access for the founder assistant; null when GITHUB_BOT_TOKEN/GITHUB_REPO are not set. */
+  github: GitHub | null;
   /** Fire-and-forget work (e.g. competitor profiling) is tracked here so tests and shutdown can await it. */
   track<T>(p: Promise<T>): Promise<T>;
   idle(): Promise<void>;
@@ -61,6 +64,8 @@ export interface AppOverrides {
   llmClient?: MessagesClient;
   /** Fake client for the founder chat in tests. */
   founderClient?: MessagesClient;
+  /** Fake GitHub client in tests. */
+  github?: GitHub;
 }
 
 export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
@@ -107,6 +112,7 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
     news: undefined as unknown as NewsMonitor,
     memory: new Memory(db, events),
     founder: undefined as unknown as Founder,
+    github: overrides.github ?? (cfg.GITHUB_BOT_TOKEN && cfg.GITHUB_REPO ? new GitHub({ token: cfg.GITHUB_BOT_TOKEN, repo: cfg.GITHUB_REPO }) : null),
     track(p) {
       tasks.add(p);
       void p.finally(() => tasks.delete(p));

@@ -308,10 +308,17 @@ system prompt embeds the memory briefing and the project docs, so it can
 explain the company truthfully and turns change requests into memory notes.
 Separate budget (`FOUNDER_*`), every model call and write-tool use audited.
 
-**Phase B (pending a fine-grained GitHub token).** Add repo tools: read/search
-files, `propose_change` -> branch + pull request, read CI results; merge is a
-high-risk approval executed by the system. The assistant never writes to
-`main`.
+**Phase B (done).** Repo tools via a fine-grained GitHub token limited to this
+repository (contents + pull requests write, actions read): `repo_list_files`,
+`repo_read_file`, `repo_search`, `propose_change` (branch `founder/<slug>` +
+commit + PR, journaled in memory), `pr_status` (CI result + failure excerpt),
+`list_pull_requests`. Merging is the approval action `repo.merge_pr`
+(high risk, human); execution refuses if CI is pending or red. The assistant
+never writes to `main` and is blocked from paths reserved for the engineering
+agent (CI, Docker/Railway, package manifests, config, auth, passwords,
+approvals, github client, the founder module itself, existing migrations).
+Guidance in the prompt: small single-purpose PRs for copy, translations,
+theme, landing/pricing, legal, docs; everything else becomes a memory request.
 
 **Consequences.** ≈ $0.05 per exchange; conversations are stored in the
 database (exportable, deletable with the account). API keys now inherit their

@@ -40,6 +40,7 @@ export type EventType =
   | "alert.sent"
   | "memory.added"
   | "memory.updated"
+  | "repo.change_proposed"
   | "user.email_verified"
   | "page.added"
   | "page.removed"
