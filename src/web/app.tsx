@@ -78,7 +78,8 @@ export function createWebApp(app: App) {
     const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? c.req.header("x-real-ip") ?? null;
     try {
       const r = await auth.requestLogin(email, ip);
-      if (isJson(c)) return c.json({ sent: r.sent, ...(r.devLink ? { dev_link: r.devLink } : {}) });
+      if (isJson(c)) return c.json({ sent: r.sent, ...(r.devLink ? { dev_link: r.devLink } : {}), ...(r.error ? { error: r.error } : {}) }, r.sent ? 200 : 502);
+      if (!r.sent) return c.html(<LoginPage error={`We couldn't send your sign-in email. Email provider said: ${r.error ?? "unknown error"}`} />, 502);
       return c.html(<LoginPage sent email={email} devLink={r.devLink} />);
     } catch (err) {
       if (err instanceof AuthError) return isJson(c) ? c.json({ error: err.message }, err.status) : c.html(<LoginPage error={err.message} />, err.status);

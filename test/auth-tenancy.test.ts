@@ -28,6 +28,20 @@ describe("magic-link auth", () => {
     expect(t.app.events.list({ type: "user.login_failed" })).toHaveLength(1);
   });
 
+  it("shows email delivery failures to the user instead of pretending the link was sent", async () => {
+    t.app.close();
+    const failingResend = (async () => new Response(JSON.stringify({ name: "validation_error", message: "You can only send testing emails to your own email address" }), { status: 403 })) as unknown as typeof fetch;
+    t = testApp({ EMAIL_PROVIDER: "resend", RESEND_API_KEY: "re_test" }, { fetchImpl: failingResend });
+    const res = await json<{ sent: boolean; error: string }>(t.web, "/auth/login", { method: "POST", body: JSON.stringify({ email: "x@y.co" }) });
+    expect(res.status).toBe(502);
+    expect(res.body.sent).toBe(false);
+    expect(res.body.error).toContain("own email address");
+    const page = await t.web.request(`${t.base}/auth/login`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "email=x%40y.co" });
+    expect(page.status).toBe(502);
+    expect(await page.text()).toContain("Email provider said");
+    expect(t.app.events.list({ type: "email.failed" })).toHaveLength(2);
+  });
+
   it("rate limits login requests per email", async () => {
     for (let i = 0; i < 5; i++) expect((await json(t.web, "/auth/login", { method: "POST", body: JSON.stringify({ email: "spam@b.co" }) })).status).toBe(200);
     const sixth = await json(t.web, "/auth/login", { method: "POST", body: JSON.stringify({ email: "spam@b.co" }) });

@@ -57,7 +57,7 @@ export class Auth {
   }
 
   /** Step 1: request a magic link. Rate limited per email. Always returns silently to avoid account enumeration. */
-  async requestLogin(emailRaw: string, ip: string | null): Promise<{ sent: boolean; devLink?: string }> {
+  async requestLogin(emailRaw: string, ip: string | null): Promise<{ sent: boolean; devLink?: string; error?: string }> {
     const email = emailRaw.trim().toLowerCase();
     const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
     if (this.repo.countRecentLoginTokens(email, hourAgo) >= 5) {
@@ -88,7 +88,9 @@ export class Auth {
     });
     // In non-production with the log provider, surface the link so local sign-in is possible.
     const devLink = !this.cfg.isProduction && result.provider === "log" ? link : undefined;
-    return { sent: result.ok, ...(devLink ? { devLink } : {}) };
+    // Delivery errors are shown to the user: they reveal nothing about whether an account exists,
+    // and hiding them leaves operators debugging blind.
+    return { sent: result.ok, ...(devLink ? { devLink } : {}), ...(result.error ? { error: result.error } : {}) };
   }
 
   /** Step 2: verify the token, create user/account if needed, return a session token to set as a cookie. */

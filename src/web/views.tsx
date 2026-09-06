@@ -76,6 +76,7 @@ export const LoginPage: FC<{ sent?: boolean; devLink?: string | undefined; error
         <p>
           If <strong>{email}</strong> is valid, a sign-in link is on its way. It expires in a few minutes.
         </p>
+        <p class="muted">Not there after a minute? Check your spam folder — and mark it "not spam" so future digests arrive in your inbox.</p>
         {devLink ? (
           <p class="muted">
             Development mode (log email provider): <a href={devLink}>open the sign-in link</a>
