@@ -22,6 +22,11 @@ instance; running two would double-fetch. (`railway.json` pins `numReplicas: 1`.
    Railway detects `railway.json` and builds the Dockerfile.
 2. Service → **Volumes** → add volume, mount path `/data`.
 3. Service → **Settings → Networking** → Generate Domain. Note the URL.
+   **Port: Railway injects `PORT=8080` into the container and the app listens
+   on whatever `PORT` is, so the domain's target port must be `8080`** (not the
+   Dockerfile's `EXPOSE 3000`). A wrong port shows as `502 Bad Gateway` while
+   the deployment is green. The deploy log line `rivalwatch listening` shows the
+   actual port.
 4. Service → **Variables** → set (see table). At minimum:
    `NODE_ENV=production`, `PUBLIC_URL=https://<domain>`, `ADMIN_EMAILS=<you>`,
    `DATABASE_PATH=/data/rivalwatch.db`.
@@ -106,6 +111,8 @@ image + restore backup.
 | Symptom | Where to look | Likely fix |
 |---------|---------------|------------|
 | `/health` degraded | Railway logs `db` | Volume not mounted / path wrong |
+| `502 Bad Gateway` with a green deploy | Settings → Networking → domain port | Must equal the `PORT` Railway injects (8080) |
+| `Cannot open database at /data/...` | Deploy logs | Volume permissions; the entrypoint chowns `/data` - ensure the image is current |
 | Users not receiving links | `/admin` → Recent emails; `email.failed` events | Resend domain not verified; wrong `EMAIL_FROM` |
 | Pages stuck non-ACTIVE | `/admin` → Unhealthy pages | See status: AUTH_REQUIRED ⇒ site blocks bots (pause or drop page); RATE_LIMITED ⇒ backoff is automatic; CONTENT_UNREADABLE ⇒ JS-rendered page (roadmap: headless fallback) |
 | Insights say `heuristic` though Anthropic is on | `ai.cap_reached` / `ai.failed` events | Raise caps or fix key |
