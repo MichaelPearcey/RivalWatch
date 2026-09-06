@@ -64,10 +64,16 @@ describe("magic-link auth", () => {
     const cookie = (ok.headers.get("set-cookie") ?? "").split(";")[0]!;
     const me = await json<{ user: { is_admin: boolean } }>(t.web, "/api/me", { session: { cookie, email: "admin@rivalwatch.test" } });
     expect(me.body.user.is_admin).toBe(true);
-    // once an admin has logged in, bootstrap is closed for good
-    expect((await t.web.request(url("correct-horse-battery-staple", "admin@rivalwatch.test"))).status).toBe(403);
+    // the same token value cannot be used twice...
+    const reused = await t.web.request(url("correct-horse-battery-staple", "admin@rivalwatch.test"), { headers: { accept: "text/html" } });
+    expect(reused.status).toBe(403);
+    expect(await reused.text()).toContain("set a new BOOTSTRAP_ADMIN_TOKEN");
     const audit = t.app.events.list({ type: "agent.action" })[0]!;
     expect(audit).toMatchObject({ risk_level: "high", requested_by: "operator", approved_by: "env:BOOTSTRAP_ADMIN_TOKEN" });
+    // ...but the operator can set a new value and sign in again (e.g. lost session, email down).
+    t.app.cfg.BOOTSTRAP_ADMIN_TOKEN = "a-brand-new-token-value";
+    expect((await t.web.request(url("a-brand-new-token-value", "admin@rivalwatch.test"))).status).toBe(302);
+    expect((await t.web.request(url("a-brand-new-token-value", "admin@rivalwatch.test"))).status).toBe(403);
   });
 
   it("bootstrap is unavailable when the variable is not set", async () => {

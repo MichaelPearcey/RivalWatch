@@ -103,30 +103,34 @@ export class Auth {
   }
 
   /**
-   * One-time operator bootstrap for a fresh deployment where email is not yet
-   * configured. Requires BOOTSTRAP_ADMIN_TOKEN to be set, the email to be in
-   * ADMIN_EMAILS, and works only while no admin has ever signed in. Remove the
-   * variable afterwards.
+   * Operator bootstrap sign-in for deployments where email is not (yet) working.
+   * Requires BOOTSTRAP_ADMIN_TOKEN to be set and the email to be in ADMIN_EMAILS.
+   * Each token *value* can be used exactly once; to sign in again the operator
+   * sets a new value in the environment (an operator-only action, which is the
+   * trust boundary). Remove the variable when not needed.
    */
   bootstrapAdmin(token: string, emailRaw: string): { user: User; sessionToken: string; created: boolean } {
     const email = emailRaw.trim().toLowerCase();
     const expected = this.cfg.BOOTSTRAP_ADMIN_TOKEN;
-    const anyAdminLoggedIn = this.repo.count("SELECT COUNT(*) c FROM users WHERE is_admin = 1 AND last_login_at IS NOT NULL") > 0;
-    const ok = !!expected && expected.length >= 16 && safeEqual(token, expected) && this.isAdminEmail(email) && !anyAdminLoggedIn;
-    if (!ok) {
-      const why = {
-        token_configured: !!expected,
-        token_long_enough: !!expected && expected.length >= 16,
-        token_matches: !!expected && safeEqual(token, expected),
-        email_is_admin: this.isAdminEmail(email),
-        admin_emails_configured: this.cfg.ADMIN_EMAILS.length,
-        already_bootstrapped: anyAdminLoggedIn,
-      };
+    const usedHash = expected ? hashToken(`bootstrap:${expected}`) : "";
+    const alreadyUsed = !!expected && this.repo.count("SELECT COUNT(*) c FROM login_tokens WHERE token_hash = ?", usedHash) > 0;
+    const why = {
+      token_configured: !!expected,
+      token_long_enough: !!expected && expected.length >= 16,
+      token_matches: !!expected && safeEqual(token, expected),
+      email_is_admin: this.isAdminEmail(email),
+      token_unused: !alreadyUsed,
+    };
+    if (!Object.values(why).every(Boolean)) {
       // Operator-facing diagnostics: flags only, never values.
-      log.warn("bootstrap sign-in rejected", { email: maskEmail(email), ...why });
+      log.warn("bootstrap sign-in rejected", { email: maskEmail(email), ...why, admin_emails_configured: this.cfg.ADMIN_EMAILS.length });
       this.events.record({ type: "user.login_failed", result: "denied", riskLevel: "high", payload: { reason: "bootstrap_rejected", email: maskEmail(email), ...why } });
-      throw new AuthError(403, `Bootstrap sign-in is not available (${Object.entries(why).filter(([, v]) => v === false).map(([k]) => k).join(", ") || "already used"}).`);
+      const failed = Object.entries(why).filter(([, v]) => !v).map(([k]) => k).join(", ");
+      throw new AuthError(403, `Bootstrap sign-in is not available (${failed}). ${alreadyUsed ? "This token value was already used: set a new BOOTSTRAP_ADMIN_TOKEN in the environment to sign in again." : ""}`.trim());
     }
+    // Burn this token value: recorded as a pre-used login token so it survives restarts.
+    this.repo.createLoginToken(usedHash, email, new Date(Date.now() + 100 * 365 * 86_400_000).toISOString(), "bootstrap");
+    this.repo.db.prepare("UPDATE login_tokens SET used_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE token_hash = ?").run(usedHash);
     const result = this.establishSession(email, "bootstrap");
     this.events.record({ type: "agent.action", actor: `user:${result.user.id}`, accountId: result.user.account_id, entity: { type: "user", id: result.user.id }, riskLevel: "high", requestedBy: "operator", approvedBy: "env:BOOTSTRAP_ADMIN_TOKEN", payload: { action: "bootstrap_admin_login" } });
     return result;

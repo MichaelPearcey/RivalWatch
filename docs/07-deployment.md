@@ -35,9 +35,10 @@ instance; running two would double-fetch. (`railway.json` pins `numReplicas: 1`.
    can be delivered, so use the one-time bootstrap:
    - add variable `BOOTSTRAP_ADMIN_TOKEN=<random string, 16+ chars>` and deploy;
    - open `https://<domain>/auth/bootstrap?token=<that string>&email=<an ADMIN_EMAILS address>`;
-   - you land on `/admin` signed in. The route then locks itself (it only works
-     while no admin has ever logged in) and records a high-risk audit event.
-   - **Delete the `BOOTSTRAP_ADMIN_TOKEN` variable** afterwards.
+   - you land on `/admin` signed in. Each token *value* works exactly once and
+     records a high-risk audit event. Locked out again (lost cookie, email
+     down)? Set a **new** value for `BOOTSTRAP_ADMIN_TOKEN` and repeat.
+   - **Delete the `BOOTSTRAP_ADMIN_TOKEN` variable** when you don't need it.
    Later, once Resend is live, everyone (including you) signs in at `/login`.
 
 > **Railway UI gotcha:** variable edits are *staged*. After editing, click the
