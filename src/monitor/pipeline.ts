@@ -28,6 +28,17 @@ export interface PipelineOptions {
   now?: () => Date;
 }
 
+/** Compact one-paragraph version of a stored competitor profile for the analyser prompt. */
+function profileSummary(json: string | null): string | undefined {
+  if (!json) return undefined;
+  try {
+    const p = JSON.parse(json) as { summary?: string; usps?: string[]; pricing_summary?: string; target_customers?: string };
+    return [p.summary, p.target_customers && `Target customers: ${p.target_customers}`, p.usps?.length && `USPs: ${p.usps.join("; ")}`, p.pricing_summary && `Pricing: ${p.pricing_summary}`].filter(Boolean).join(" ").slice(0, 1200);
+  } catch {
+    return undefined;
+  }
+}
+
 const FAILURE_STATUS: Record<FetchFailureReason, PageStatus> = {
   robots_blocked: "ROBOTS_BLOCKED",
   auth_required: "AUTH_REQUIRED",
@@ -214,7 +225,7 @@ export class Pipeline {
       const result = await this.analyzer.analyze({
         language: LANGUAGE_NAMES[(isLocale(ownerLocale) ? ownerLocale : "en") as Locale],
         business: { name: business.name, description: business.description, pricing_notes: business.pricing_notes },
-        competitor: { name: competitor.name, website: competitor.website },
+        competitor: { name: competitor.name, website: competitor.website, profile: profileSummary(competitor.profile_json) },
         page: { url: page.url, kind: page.kind, title: pageTitle },
         change: {
           added: JSON.parse(change.added_json),

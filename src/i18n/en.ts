@@ -117,6 +117,30 @@ export const en = {
   "login.devlink": "open the sign-in link",
   "login.and": "and",
 
+  // password signup + verification
+  "signup.pw.h": "Create an account with a password",
+  "signup.pw.p": "Your email is your username. We'll send a link to confirm the address.",
+  "signup.pw.password": "Choose a password (12+ characters)",
+  "signup.pw.btn": "Create account",
+  "signup.or": "or",
+  "verify.banner": "Please confirm your email address — we sent a link to {email}. Digests are paused until then.",
+  "verify.resend": "Resend link",
+  "verify.sent": "Confirmation link sent.",
+
+  // competitor profile
+  "profile.h": "About {name}",
+  "profile.pending": "Building a profile from their public pages…",
+  "profile.failed": "We couldn't build a profile automatically.",
+  "profile.target": "Target customers",
+  "profile.usps": "What they emphasise",
+  "profile.products": "Products & services",
+  "profile.pricing": "Pricing",
+  "profile.positioning": "Positioning",
+  "profile.sources": "Based on {n} page(s)",
+  "profile.heuristic": "Automatic summary without AI — enable AI analysis for a richer profile.",
+  "profile.refresh": "Refresh profile",
+  "profile.autoadded": "Added automatically",
+
   // consent
   "consent.first.h": "One last thing",
   "consent.first.p": "Before you start, please read and accept how the service works and how we look after your data.",

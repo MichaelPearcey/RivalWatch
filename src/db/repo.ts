@@ -31,6 +31,7 @@ export interface User {
   failed_logins: number;
   locked_until: string | null;
   locale: string | null;
+  email_verified_at: string | null;
 }
 
 export interface Consent {
@@ -65,6 +66,22 @@ export interface Competitor {
   website: string;
   notes: string | null;
   created_at: string;
+  profile_json: string | null;
+  profile_status: "none" | "pending" | "ready" | "failed";
+  profile_generated_at: string | null;
+  profile_error: string | null;
+}
+
+/** AI-generated (or heuristic) summary of a competitor, built from their public pages. */
+export interface CompetitorProfile {
+  summary: string;
+  target_customers: string;
+  usps: string[];
+  products: string[];
+  pricing_summary: string;
+  positioning: string;
+  sources: string[];
+  provider: string;
 }
 
 export interface MonitoredPage {
@@ -238,6 +255,9 @@ export class Repo {
   touchUserLogin(id: number, grantAdmin: boolean): void {
     this.db.prepare(`UPDATE users SET last_login_at = ${NOW}, is_admin = CASE WHEN ? THEN 1 ELSE is_admin END, failed_logins = 0, locked_until = NULL WHERE id = ?`).run(grantAdmin ? 1 : 0, id);
   }
+  markEmailVerified(id: number): void {
+    this.db.prepare(`UPDATE users SET email_verified_at = COALESCE(email_verified_at, ${NOW}) WHERE id = ?`).run(id);
+  }
   setUserLocale(id: number, locale: string): void {
     this.db.prepare("UPDATE users SET locale = ? WHERE id = ?").run(locale, id);
   }
@@ -337,6 +357,11 @@ export class Repo {
   }
   countCompetitors(accountId: number): number {
     return (this.db.prepare("SELECT COUNT(*) c FROM competitors WHERE account_id = ?").get(accountId) as { c: number }).c;
+  }
+  setCompetitorProfile(id: number, status: Competitor["profile_status"], profile: CompetitorProfile | null, error: string | null = null): void {
+    this.db
+      .prepare(`UPDATE competitors SET profile_status = ?, profile_json = ?, profile_error = ?, profile_generated_at = CASE WHEN ? = 'ready' THEN ${NOW} ELSE profile_generated_at END WHERE id = ?`)
+      .run(status, profile ? JSON.stringify(profile) : null, error, status, id);
   }
   deleteCompetitor(accountId: number, id: number): boolean {
     return this.db.prepare("DELETE FROM competitors WHERE id = ? AND account_id = ?").run(id, accountId).changes > 0;

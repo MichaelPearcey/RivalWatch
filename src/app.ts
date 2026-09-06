@@ -1,4 +1,5 @@
 import { createAnalyzer } from "./ai/index.js";
+import { JsonLlm } from "./ai/llm.js";
 import type { Analyzer } from "./ai/types.js";
 import { Agents } from "./agents/index.js";
 import type { MessagesClient } from "./agents/runner.js";
@@ -36,6 +37,10 @@ export interface App {
   approvals: Approvals;
   agents: Agents;
   backups: Backups;
+  llm: JsonLlm;
+  /** Fire-and-forget work (e.g. competitor profiling) is tracked here so tests and shutdown can await it. */
+  track<T>(p: Promise<T>): Promise<T>;
+  idle(): Promise<void>;
   close(): void;
 }
 
@@ -45,6 +50,8 @@ export interface AppOverrides {
   pipeline?: PipelineOptions;
   /** Fake Anthropic messages client for agent tests. */
   agentClient?: MessagesClient;
+  /** Fake client for JSON completions (competitor profiles) in tests. */
+  llmClient?: MessagesClient;
 }
 
 export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
@@ -87,11 +94,21 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
     approvals: undefined as unknown as Approvals,
     agents: undefined as unknown as Agents,
     backups: new Backups(cfg, db, events),
+    llm: new JsonLlm(cfg, events, overrides.llmClient),
+    track(p) {
+      tasks.add(p);
+      void p.finally(() => tasks.delete(p));
+      return p;
+    },
+    async idle() {
+      while (tasks.size) await Promise.allSettled([...tasks]);
+    },
     close() {
       scheduler.stop();
       db.close();
     },
   };
+  const tasks = new Set<Promise<unknown>>();
   app.approvals = new Approvals(app);
   app.agents = new Agents(app, cfg, overrides.agentClient);
   scheduler.addJob({ name: "approvals_expire", run: (now) => void app.approvals.expireStale(now) });

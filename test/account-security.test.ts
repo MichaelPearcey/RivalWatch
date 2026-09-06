@@ -76,6 +76,64 @@ describe("password sign-in", () => {
   });
 });
 
+describe("password sign-up and email verification", () => {
+  let t: ReturnType<typeof testApp>;
+  beforeEach(() => (t = testApp()));
+  afterEach(() => t.app.close());
+
+  it("creates an account with a password, signs in, sends a verification link, and verifies on click", async () => {
+    const weak = await json<{ error: string }>(t.web, "/auth/signup", { method: "POST", body: JSON.stringify({ email: "new@a.co", password: "short" }) });
+    expect(weak.status).toBe(400);
+    const res = await t.web.request(`${t.base}/auth/signup`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "email=new%40a.co&password=a+perfectly+fine+passphrase" });
+    expect(res.status).toBe(302);
+    const cookie = (res.headers.get("set-cookie") ?? "").split(";")[0]!;
+    const session = { cookie, email: "new@a.co" };
+    const me = await json<{ user: { has_password: boolean } }>(t.web, "/api/me", { session });
+    expect(me.body.user.has_password).toBe(true);
+    const user = t.app.repo.getUserByEmail("new@a.co")!;
+    expect(user.email_verified_at).toBeNull();
+
+    // A verification email went out; the app shows a banner until it is clicked; digests skip the address.
+    const verifyMail = t.app.repo.listEmails().find((e) => e.kind === "verify_email")!;
+    expect(verifyMail.to_address).toBe("new@a.co");
+    // Accept legal first so the app renders.
+    await t.web.request(`${t.base}/legal/accept`, { method: "POST", headers: { cookie, "content-type": "application/x-www-form-urlencoded" }, body: "terms=1&privacy=1&next=%2F" });
+    const dash = await html(t.web, "/", session);
+    expect(dash.text).toContain("Please confirm your email address");
+
+    const link = verifyMail.body_text!.match(/https?:\/\/\S+\/auth\/verify\?token=\S+/)![0];
+    const clicked = await t.web.request(link);
+    expect(clicked.status).toBe(302);
+    expect(t.app.repo.getUserByEmail("new@a.co")!.email_verified_at).toBeTruthy();
+    expect(t.app.events.list({ type: "user.email_verified" })).toHaveLength(1);
+    expect((await html(t.web, "/", session)).text).not.toContain("Please confirm your email address");
+
+    // Duplicate sign-up is refused with a clear message.
+    const dup = await json<{ error: string }>(t.web, "/auth/signup", { method: "POST", body: JSON.stringify({ email: "new@a.co", password: "another long passphrase" }) });
+    expect(dup.status).toBe(409);
+    expect(dup.body.error).toContain("already exists");
+  });
+
+  it("digests are not sent to unverified addresses", async () => {
+    const res = await json(t.web, "/auth/signup", { method: "POST", body: JSON.stringify({ email: "unv@a.co", password: "a perfectly fine passphrase" }) });
+    expect(res.status).toBe(201);
+    const user = t.app.repo.getUserByEmail("unv@a.co")!;
+    const business = t.app.repo.createBusiness({ account_id: user.account_id, name: "B" });
+    const r = await t.app.digests.sendFor(t.app.repo.getBusiness(user.account_id, business.id)!, "system", false, true);
+    expect(r.recipients).toBe(0);
+    t.app.repo.markEmailVerified(user.id);
+    const r2 = await t.app.digests.sendFor(t.app.repo.getBusiness(user.account_id, business.id)!, "system", false, true);
+    expect(r2.recipients).toBe(1);
+  });
+
+  it("resend verification is rate limited", async () => {
+    const res = await t.web.request(`${t.base}/auth/signup`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "rl@a.co", password: "a perfectly fine passphrase" }) });
+    const cookie = (res.headers.get("set-cookie") ?? "").split(";")[0]!;
+    for (let i = 0; i < 4; i++) expect((await json(t.web, "/auth/resend-verification", { method: "POST", session: { cookie, email: "rl@a.co" } })).status).toBe(200);
+    expect((await json(t.web, "/auth/resend-verification", { method: "POST", session: { cookie, email: "rl@a.co" } })).status).toBe(429);
+  });
+});
+
 describe("consent gate", () => {
   let t: ReturnType<typeof testApp>;
   beforeEach(() => (t = testApp()));

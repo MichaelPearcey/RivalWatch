@@ -6,7 +6,7 @@ export interface AnalysisInput {
   /** Language the insight should be written in, e.g. "English", "Ukrainian". Defaults to English. */
   language?: string;
   business: { name: string; description: string | null; pricing_notes: string | null };
-  competitor: { name: string; website: string };
+  competitor: { name: string; website: string; profile?: string | undefined };
   page: { url: string; kind: PageKind; title: string | null };
   change: {
     added: string[];

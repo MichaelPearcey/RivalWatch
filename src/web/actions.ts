@@ -1,8 +1,10 @@
 import { z } from "zod";
 import type { App } from "../app.js";
 import type { Principal } from "../auth.js";
-import { FEEDBACK_VERDICTS, PAGE_KINDS, type Business, type Competitor, type Insight, type InsightFeedback, type MonitoredPage, type PageSuggestion } from "../db/repo.js";
-import { errorFields } from "../logger.js";
+import { generateProfile, type ProfileSource } from "../ai/profile.js";
+import { FEEDBACK_VERDICTS, PAGE_KINDS, type Business, type Competitor, type CompetitorProfile, type Insight, type InsightFeedback, type MonitoredPage, type PageSuggestion } from "../db/repo.js";
+import { LANGUAGE_NAMES, isLocale, type Locale } from "../i18n/index.js";
+import { errorFields, log } from "../logger.js";
 import type { ProcessOutcome } from "../monitor/pipeline.js";
 import { PLANS, getPlan } from "../plans.js";
 import { discoverPages } from "../sources/website/discover.js";
@@ -174,8 +176,65 @@ export async function addCompetitor(app: App, p: Principal, businessId: number, 
 
   const pageInputs = input.pages && input.pages.length > 0 ? input.pages : [{ url: input.website, kind: "home" as const }];
   const pages = pageInputs.map((pg) => addPage(app, p, competitor.id, pg));
-  const suggestions = input.discover ? await discoverForCompetitor(app, p, competitor.id) : [];
-  return { competitor, pages, suggestions };
+  let suggestions: PageSuggestion[] = [];
+  if (input.discover) {
+    suggestions = await discoverForCompetitor(app, p, competitor.id);
+    // Auto-fill: adopt the single best pricing and products page when the URL path itself says what it is.
+    for (const kind of ["pricing", "products"] as const) {
+      const best = suggestions.filter((s) => s.kind === kind && s.score >= AUTO_ADOPT_SCORE).sort((a, b) => b.score - a.score)[0];
+      if (!best) continue;
+      try {
+        const page = resolveSuggestion(app, p, best.id, true, "system");
+        if (page) pages.push(page);
+      } catch {
+        /* plan limit or duplicate: leave it as a suggestion */
+      }
+    }
+    suggestions = app.repo.listSuggestions(p.accountId, competitor.id);
+    // Profile generation reads the pages we just fetched; run it without blocking the request.
+    app.repo.setCompetitorProfile(competitor.id, "pending", null);
+    void app.track(profileCompetitor(app, p, competitor.id).catch((err) => log.error("profile generation crashed", { competitor_id: competitor.id, ...errorFields(err) })));
+  }
+  return { competitor: app.repo.getCompetitor(p.accountId, competitor.id)!, pages, suggestions };
+}
+
+/** Suggestions with a path match score at or above this are adopted automatically (see discover.ts scoring). */
+const AUTO_ADOPT_SCORE = 0.8;
+
+/**
+ * Builds the competitor profile from their home page plus any pricing/products pages we monitor.
+ * Uses the LLM when available, otherwise a heuristic; records status so the UI can show progress.
+ */
+export async function profileCompetitor(app: App, p: Principal, competitorId: number): Promise<CompetitorProfile | null> {
+  const competitor = getCompetitor(app, p, competitorId);
+  app.repo.setCompetitorProfile(competitorId, "pending", null);
+  try {
+    const pages = app.repo.listPages(p.accountId, competitorId).filter((pg) => ["home", "pricing", "products"].includes(pg.kind)).slice(0, 4);
+    const sources: ProfileSource[] = [];
+    for (const pg of pages) {
+      // Prefer a stored snapshot (already fetched) to avoid hammering the site; fetch only when we have none.
+      const snap = app.repo.latestSnapshot(pg.id);
+      if (snap) sources.push({ url: pg.url, kind: pg.kind, title: snap.title, text: snap.text });
+      else {
+        const outcome = await app.sources.get(pg.source_type)?.fetch(pg);
+        if (outcome?.ok) sources.push({ url: pg.url, kind: pg.kind, title: outcome.title, text: outcome.text });
+      }
+    }
+    if (sources.length === 0) {
+      const outcome = await app.sources.get("website")?.fetch({ ...pages[0]!, url: competitor.website, kind: "home" } as MonitoredPage);
+      if (outcome?.ok) sources.push({ url: competitor.website, kind: "home", title: outcome.title, text: outcome.text });
+    }
+    const owner = app.repo.listUsers(p.accountId).find((u) => u.role === "owner");
+    const language = LANGUAGE_NAMES[(isLocale(owner?.locale) ? owner!.locale : "en") as Locale];
+    const profile = await generateProfile(app.llm, competitor.name, competitor.website, sources, { language, accountId: p.accountId });
+    app.repo.setCompetitorProfile(competitorId, "ready", profile);
+    app.events.record({ type: "competitor.profiled", actor: "system", accountId: p.accountId, entity: { type: "competitor", id: competitorId }, payload: { provider: profile.provider, sources: profile.sources.length, usps: profile.usps.length } });
+    return profile;
+  } catch (err) {
+    app.repo.setCompetitorProfile(competitorId, "failed", null, (err as Error).message);
+    app.events.record({ type: "competitor.profiled", actor: "system", accountId: p.accountId, entity: { type: "competitor", id: competitorId }, result: "failed", payload: errorFields(err) });
+    return null;
+  }
 }
 
 export function getCompetitor(app: App, p: Principal, id: number): Competitor {
@@ -253,17 +312,17 @@ export async function discoverForCompetitor(app: App, p: Principal, competitorId
   }
 }
 
-export function resolveSuggestion(app: App, p: Principal, id: number, accept: boolean): MonitoredPage | null {
+export function resolveSuggestion(app: App, p: Principal, id: number, accept: boolean, actor = p.actor): MonitoredPage | null {
   const s = app.repo.getSuggestion(p.accountId, id) ?? notFound("suggestion");
   if (s.status !== "suggested") throw new ActionError(409, "suggestion already resolved");
   if (!accept) {
     app.repo.setSuggestionStatus(id, "dismissed");
-    app.events.record({ type: "page.suggestion_dismissed", actor: p.actor, accountId: p.accountId, entity: { type: "suggestion", id }, payload: { url: s.url } });
+    app.events.record({ type: "page.suggestion_dismissed", actor, accountId: p.accountId, entity: { type: "suggestion", id }, payload: { url: s.url } });
     return null;
   }
   const page = addPage(app, p, s.competitor_id, { url: s.url, kind: s.kind });
   app.repo.setSuggestionStatus(id, "accepted");
-  app.events.record({ type: "page.suggestion_accepted", actor: p.actor, accountId: p.accountId, entity: { type: "suggestion", id }, payload: { url: s.url, page_id: page.id } });
+  app.events.record({ type: "page.suggestion_accepted", actor, accountId: p.accountId, entity: { type: "suggestion", id }, payload: { url: s.url, page_id: page.id, automatic: actor === "system" } });
   return page;
 }
 

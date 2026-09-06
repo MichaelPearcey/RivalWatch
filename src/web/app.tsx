@@ -168,6 +168,31 @@ export function createWebApp(app: App) {
       throw err;
     }
   });
+  web.post("/auth/signup", async (c) => {
+    const body = await bodyOf(c);
+    const { email, password } = z.object({ email: z.string().email().max(254), password: z.string().max(128) }).parse(body);
+    try {
+      const { sessionToken } = await auth.signupWithPassword(email, password, ipOf(c));
+      setSession(c, sessionToken);
+      if (isJson(c)) return c.json({ ok: true }, 201);
+      return c.redirect(safeNext(body.next));
+    } catch (err) {
+      if (err instanceof AuthError) return isJson(c) ? c.json({ error: err.message }, err.status) : c.html(<LoginPage t={T(c)} mode="signup" error={err.message} email={email} />, err.status);
+      throw err;
+    }
+  });
+  web.post("/auth/resend-verification", async (c) => {
+    const p = c.get("principal");
+    if (!p || p.via !== "session") return c.redirect("/login");
+    try {
+      const r = await auth.sendVerification(p.user, ipOf(c));
+      if (isJson(c)) return c.json(r);
+      return c.redirect(`/?flash=${encodeURIComponent(r.sent ? T(c)("verify.sent") : (r.error ?? "send failed"))}`);
+    } catch (err) {
+      if (err instanceof AuthError) return isJson(c) ? c.json({ error: err.message }, err.status) : c.redirect(`/?flash=${encodeURIComponent(err.message)}`);
+      throw err;
+    }
+  });
   web.get("/auth/verify", (c) => {
     const token = c.req.query("token") ?? "";
     try {
@@ -268,6 +293,14 @@ export function createWebApp(app: App) {
   });
   api.post("/competitors/:id/pages", async (c) => c.json(A.addPage(app, P(c), id(c), A.PageInput.parse(await c.req.json())), 201));
   api.post("/competitors/:id/discover", async (c) => c.json(await A.discoverForCompetitor(app, P(c), id(c))));
+  api.post("/competitors/:id/profile", async (c) => {
+    const profile = await A.profileCompetitor(app, P(c), id(c));
+    return profile ? c.json(profile) : c.json({ error: "profile generation failed" }, 502);
+  });
+  api.get("/competitors/:id", (c) => {
+    const comp = A.getCompetitor(app, P(c), id(c));
+    return c.json({ ...comp, profile: comp.profile_json ? JSON.parse(comp.profile_json) : null, profile_json: undefined });
+  });
   api.get("/competitors/:id/suggestions", (c) => {
     A.getCompetitor(app, P(c), id(c));
     return c.json(repo.listSuggestions(P(c).accountId, id(c)));
@@ -494,6 +527,12 @@ export function createWebApp(app: App) {
     return tryUi(c, `/b/${competitor.business_id}`, async () => {
       const s = await A.discoverForCompetitor(app, P(c), competitor.id);
       return s.length ? `${s.length} suggestion(s) waiting for your confirmation.` : "No additional pages found on their home page.";
+    });
+  });
+  ui.post("/competitors/:id/profile", async (c) => {
+    const competitor = A.getCompetitor(app, P(c), id(c));
+    return tryUi(c, `/b/${competitor.business_id}`, async () => {
+      await A.profileCompetitor(app, P(c), competitor.id);
     });
   });
   ui.post("/competitors/:id/delete", (c) => {

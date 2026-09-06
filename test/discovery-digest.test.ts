@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildDigest, nextDigestTime } from "../src/digest.js";
 import type { Business, Insight } from "../src/db/repo.js";
 import { rankLinks } from "../src/sources/website/discover.js";
-import { fixture, json, login, testApp } from "./helpers.js";
+import { fixture, html, json, login, testApp } from "./helpers.js";
 
 describe("rankLinks", () => {
   const html = `<nav><a href="/">Home</a><a href="/pricing">Pricing</a><a href="/features">Features</a><a href="/blog">Blog</a>
@@ -29,32 +29,52 @@ describe("discovery flow", () => {
   beforeEach(() => (t = testApp()));
   afterEach(() => t.app.close());
 
-  it("suggests pages when a competitor is added and monitors only what the user accepts", async () => {
+  it("auto-adopts confident pricing/products pages, leaves the rest as suggestions, and profiles the competitor", async () => {
     const s = await login(t.web, "d@a.co");
+    t.app.repo.updateAccountPlan(t.app.repo.getUserByEmail("d@a.co")!.account_id, "pro");
     const b = (await json<{ id: number }>(t.web, "/api/businesses", { method: "POST", session: s, body: JSON.stringify({ name: "B" }) })).body;
-    const r = await json<{ competitor: { id: number }; pages: unknown[]; suggestions: { id: number; kind: string; url: string }[] }>(t.web, `/api/businesses/${b.id}/competitors`, {
+    const r = await json<{ competitor: { id: number; profile_status: string }; pages: { kind: string }[]; suggestions: { id: number; kind: string; url: string }[] }>(t.web, `/api/businesses/${b.id}/competitors`, {
       method: "POST",
       session: s,
       body: JSON.stringify({ name: "Acme", website: `${t.base}/demo/` }),
     });
     expect(r.status).toBe(201);
-    expect(r.body.pages).toHaveLength(1); // home only
-    const kinds = r.body.suggestions.map((x) => x.kind).sort();
-    expect(kinds).toEqual(["pricing", "products"]);
+    // Demo home links to /pricing and /products with matching link text: both are adopted automatically.
+    expect(r.body.pages.map((p) => p.kind).sort()).toEqual(["home", "pricing", "products"]);
+    expect(r.body.suggestions).toEqual([]);
+    expect(r.body.competitor.profile_status).toBe("pending");
+    const auto = t.app.events.list({ type: "page.suggestion_accepted" });
+    expect(auto).toHaveLength(2);
+    expect(auto.every((e) => e.actor === "system" && JSON.parse(e.payload).automatic === true)).toBe(true);
 
-    const pricing = r.body.suggestions.find((x) => x.kind === "pricing")!;
-    const products = r.body.suggestions.find((x) => x.kind === "products")!;
-    const accepted = await json<{ url: string; kind: string }>(t.web, `/api/suggestions/${pricing.id}/accept`, { method: "POST", session: s });
-    expect(accepted.status).toBe(201);
-    expect(accepted.body).toMatchObject({ url: pricing.url, kind: "pricing" });
+    // Background profiling completes (heuristic here, since no LLM in tests) and is exposed on the competitor.
+    await t.app.idle();
+    const comp = (await json<{ profile_status: string; profile: { summary: string; pricing_summary: string; provider: string; sources: string[] } }>(t.web, `/api/competitors/${r.body.competitor.id}`, { session: s })).body;
+    expect(comp.profile_status).toBe("ready");
+    expect(comp.profile.provider).toBe("heuristic");
+    expect(comp.profile.summary).toContain("Acme");
+    expect(comp.profile.pricing_summary).toContain("£49/month");
+    expect(comp.profile.sources.length).toBeGreaterThanOrEqual(2);
+    expect(t.app.events.list({ type: "competitor.profiled" })).toHaveLength(1);
+
+    // The profile is shown on the business page and can be refreshed.
+    const page = await html(t.web, `/b/${b.id}`, s);
+    expect(page.text).toContain("About Acme");
+    expect((await json(t.web, `/api/competitors/${r.body.competitor.id}/profile`, { method: "POST", session: s })).status).toBe(200);
+  });
+
+  it("manual suggestions still require confirmation", async () => {
+    const s = await login(t.web, "m@a.co");
+    const b = (await json<{ id: number }>(t.web, "/api/businesses", { method: "POST", session: s, body: JSON.stringify({ name: "B" }) })).body;
+    // Free plan: 2 pages per competitor, so home + pricing are adopted and products stays a suggestion.
+    const r = await json<{ competitor: { id: number }; pages: { kind: string }[]; suggestions: { id: number; kind: string }[] }>(t.web, `/api/businesses/${b.id}/competitors`, { method: "POST", session: s, body: JSON.stringify({ name: "Acme", website: `${t.base}/demo/` }) });
+    expect(r.body.pages.map((p) => p.kind).sort()).toEqual(["home", "pricing"]);
+    expect(r.body.suggestions.map((x) => x.kind)).toEqual(["products"]);
+    const products = r.body.suggestions[0]!;
     expect((await json(t.web, `/api/suggestions/${products.id}/dismiss`, { method: "POST", session: s })).status).toBe(204);
     expect((await json(t.web, `/api/suggestions/${products.id}/dismiss`, { method: "POST", session: s })).status).toBe(409);
-
-    const pages = (await json<{ kind: string }[]>(t.web, `/api/competitors/${r.body.competitor.id}/pages`, { session: s })).body;
-    expect(pages.map((p) => p.kind).sort()).toEqual(["home", "pricing"]);
     expect((await json<unknown[]>(t.web, `/api/competitors/${r.body.competitor.id}/suggestions`, { session: s })).body).toEqual([]);
-    const types = t.app.events.list({ limit: 100 }).map((e) => e.type);
-    expect(types).toEqual(expect.arrayContaining(["discovery.completed", "page.suggested", "page.suggestion_accepted", "page.suggestion_dismissed"]));
+    await t.app.idle();
   });
 });
 

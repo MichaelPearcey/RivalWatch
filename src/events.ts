@@ -33,6 +33,8 @@ export type EventType =
   | "business.deleted"
   | "competitor.added"
   | "competitor.removed"
+  | "competitor.profiled"
+  | "user.email_verified"
   | "page.added"
   | "page.removed"
   | "page.paused"

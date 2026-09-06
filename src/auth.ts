@@ -21,7 +21,7 @@ export interface Principal {
 
 export class AuthError extends Error {
   constructor(
-    readonly status: 400 | 401 | 403 | 429,
+    readonly status: 400 | 401 | 403 | 409 | 429,
     message: string,
   ) {
     super(message);
@@ -166,6 +166,46 @@ export class Auth {
     return { user: s.user, sessionToken: s.sessionToken };
   }
 
+  /**
+   * Sign up with email + password. Creates the account and signs in immediately;
+   * the address is unverified until the emailed link is clicked (digests are held
+   * back until then, so a typo never sends someone else's data anywhere).
+   */
+  async signupWithPassword(emailRaw: string, password: string, ip: string | null): Promise<{ user: User; sessionToken: string }> {
+    const email = emailRaw.trim().toLowerCase();
+    if (this.repo.getUserByEmail(email)) throw new AuthError(409, "An account with this email already exists. Sign in instead, or use an email link if you've forgotten your password.");
+    const check = checkPasswordPolicy(password, email);
+    if (!check.ok) throw new AuthError(400, check.reason!);
+    const hash = await hashPassword(password);
+    const s = this.establishSession(email, "password_signup");
+    this.repo.setUserPassword(s.user.id, hash);
+    this.events.record({ type: "user.password_set", actor: `user:${s.user.id}`, accountId: s.user.account_id, entity: { type: "user", id: s.user.id }, payload: { at_signup: true } });
+    await this.sendVerification(s.user, ip);
+    return { user: this.repo.getUser(s.user.id)!, sessionToken: s.sessionToken };
+  }
+
+  /** Emails a one-time link that marks the address verified (and signs in, like any magic link). */
+  async sendVerification(user: User, ip: string | null): Promise<{ sent: boolean; devLink?: string; error?: string }> {
+    const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
+    if (this.repo.countRecentLoginTokens(user.email, hourAgo) >= 5) throw new AuthError(429, "Too many emails requested. Try again in an hour.");
+    const token = newToken();
+    this.repo.createLoginToken(hashToken(token), user.email, new Date(Date.now() + 24 * 3_600_000).toISOString(), ip);
+    const link = `${this.cfg.publicUrl}/auth/verify?token=${token}`;
+    const result = await this.mailer.send(
+      {
+        to: user.email,
+        kind: "verify_email",
+        subject: "Confirm your RivalWatch email",
+        text: `Welcome to RivalWatch. Please confirm your email address:\n\n${link}\n\nThe link is valid for 24 hours. If you did not create an account, ignore this email.`,
+        html: `<p>Welcome to RivalWatch. Please confirm your email address:</p><p><a href="${link}">${link}</a></p><p>The link is valid for 24 hours. If you did not create an account, ignore this email.</p>`,
+        accountId: user.account_id,
+      },
+      `user:${user.id}`,
+    );
+    const devLink = !this.cfg.isProduction && result.provider === "log" ? link : undefined;
+    return { sent: result.ok, ...(devLink ? { devLink } : {}), ...(result.error ? { error: result.error } : {}) };
+  }
+
   async setPassword(p: Principal, password: string, currentSessionToken?: string): Promise<void> {
     const check = checkPasswordPolicy(password, p.user.email);
     if (!check.ok) throw new AuthError(400, check.reason!);
@@ -190,7 +230,7 @@ export class Auth {
     return this.repo.hasConsent(user.id, "terms", LEGAL_VERSION) && this.repo.hasConsent(user.id, "privacy", LEGAL_VERSION);
   }
 
-  private establishSession(email: string, method: "magic_link" | "bootstrap" | "password"): { user: User; sessionToken: string; created: boolean } {
+  private establishSession(email: string, method: "magic_link" | "bootstrap" | "password" | "password_signup"): { user: User; sessionToken: string; created: boolean } {
     let user = this.repo.getUserByEmail(email);
     let created = false;
     if (!user) {
@@ -198,7 +238,12 @@ export class Auth {
       user = this.repo.createUser({ account_id: account.id, email, role: "owner", is_admin: this.isAdminEmail(email) });
       created = true;
       this.events.record({ type: "account.created", actor: `user:${user.id}`, accountId: account.id, entity: { type: "account", id: account.id }, payload: { plan: account.plan } });
-      this.events.record({ type: "user.signup", actor: `user:${user.id}`, accountId: account.id, entity: { type: "user", id: user.id }, payload: { email: maskEmail(user.email) } });
+      this.events.record({ type: "user.signup", actor: `user:${user.id}`, accountId: account.id, entity: { type: "user", id: user.id }, payload: { email: maskEmail(user.email), method } });
+    }
+    // A clicked email link proves control of the mailbox.
+    if ((method === "magic_link" || method === "bootstrap") && !user.email_verified_at) {
+      this.repo.markEmailVerified(user.id);
+      this.events.record({ type: "user.email_verified", actor: `user:${user.id}`, accountId: user.account_id, entity: { type: "user", id: user.id } });
     }
     this.repo.touchUserLogin(user.id, this.isAdminEmail(user.email));
     user = this.repo.getUser(user.id)!;

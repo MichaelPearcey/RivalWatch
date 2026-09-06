@@ -3,7 +3,7 @@ import { raw } from "hono/html";
 import type { AgentNote, AgentRunRow, AgentStateRow } from "../agents/types.js";
 import type { Approval } from "../approvals.js";
 import type { Principal } from "../auth.js";
-import type { Account, ApiKey, Business, Change, Competitor, EmailRow, Insight, InsightFeedback, MonitoredPage, PageSuggestion, Snapshot, User } from "../db/repo.js";
+import type { Account, ApiKey, Business, Change, Competitor, CompetitorProfile, EmailRow, Insight, InsightFeedback, MonitoredPage, PageSuggestion, Snapshot, User } from "../db/repo.js";
 import type { EventRow } from "../events.js";
 import { LOCALES, translator, type Locale, type Translate } from "../i18n/index.js";
 import { COMPANY, LEGAL_VERSION } from "../legal.js";
@@ -79,6 +79,16 @@ export const Layout: FC<{ title: string; children?: unknown; flash?: string | un
       </nav>
       <main class="wrap">
         {flash ? <div class="card info">{flash}</div> : null}
+        {principal && principal.via === "session" && !principal.user.email_verified_at ? (
+          <div class="card info row small" style="padding:.7rem 1rem">
+            <span class="grow">{t("verify.banner", { email: principal.user.email })}</span>
+            <form method="post" action="/auth/resend-verification">
+              <button class="tiny secondary" type="submit">
+                {t("verify.resend")}
+              </button>
+            </form>
+          </div>
+        ) : null}
         {children}
       </main>
       <Footer t={t} />
@@ -359,22 +369,41 @@ export const LoginPage: FC<{ t: Translate; mode?: "signin" | "signup"; sent?: bo
               </p>
             ) : null}
           </form>
-          <form method="post" action="/auth/password" class="card">
-            <h3 style="margin-top:0">{t("login.pw.h")}</h3>
-            <p class="muted small">{t("login.pw.p")}</p>
-            <input type="hidden" name="next" value={next ?? ""} />
-            <label>
-              {t("login.email")} <input name="email" type="email" required autocomplete="username" />
-            </label>
-            <label>
-              {t("login.password")} <input name="password" type="password" required autocomplete="current-password" minlength={1} />
-            </label>
-            <p>
-              <button type="submit" class="secondary" style="width:100%;justify-content:center">
-                {t("login.pw.btn")}
-              </button>
-            </p>
-          </form>
+          {mode === "signup" ? (
+            <form method="post" action="/auth/signup" class="card">
+              <h3 style="margin-top:0">{t("signup.pw.h")}</h3>
+              <p class="muted small">{t("signup.pw.p")}</p>
+              <input type="hidden" name="next" value={next ?? ""} />
+              <label>
+                {t("login.email")} <input name="email" type="email" required autocomplete="username" value={email ?? ""} />
+              </label>
+              <label>
+                {t("signup.pw.password")} <input name="password" type="password" required autocomplete="new-password" minlength={12} maxlength={128} />
+              </label>
+              <p>
+                <button type="submit" class="secondary" style="width:100%;justify-content:center">
+                  {t("signup.pw.btn")}
+                </button>
+              </p>
+            </form>
+          ) : (
+            <form method="post" action="/auth/password" class="card">
+              <h3 style="margin-top:0">{t("login.pw.h")}</h3>
+              <p class="muted small">{t("login.pw.p")}</p>
+              <input type="hidden" name="next" value={next ?? ""} />
+              <label>
+                {t("login.email")} <input name="email" type="email" required autocomplete="username" />
+              </label>
+              <label>
+                {t("login.password")} <input name="password" type="password" required autocomplete="current-password" minlength={1} />
+              </label>
+              <p>
+                <button type="submit" class="secondary" style="width:100%;justify-content:center">
+                  {t("login.pw.btn")}
+                </button>
+              </p>
+            </form>
+          )}
         </div>
       )}
       <p class="center muted small">
@@ -571,6 +600,7 @@ export const BusinessPage: FC<{
               </button>
             </form>
           </div>
+          <ProfileCard t={t} competitor={competitor} />
           <table style="margin-top:.75rem">
             <thead>
               <tr>
@@ -679,6 +709,64 @@ export const BusinessPage: FC<{
         <p class="muted tiny" style="width:100%;margin:0">{t("comp.add.note")}</p>
       </form>
     </Layout>
+  );
+};
+
+const ProfileCard: FC<{ t: Translate; competitor: Competitor }> = ({ t, competitor }) => {
+  const profile = competitor.profile_json ? (JSON.parse(competitor.profile_json) as CompetitorProfile) : null;
+  if (competitor.profile_status === "none" && !profile) return null;
+  return (
+    <details class="card flat" style="margin:.75rem 0 0" open={competitor.profile_status === "ready"}>
+      <summary>
+        <strong class="small">{t("profile.h", { name: competitor.name })}</strong>{" "}
+        {competitor.profile_status === "pending" ? <span class="muted small">{t("profile.pending")}</span> : null}
+        {competitor.profile_status === "failed" ? <span class="muted small">{t("profile.failed")}</span> : null}
+      </summary>
+      {profile ? (
+        <div class="small" style="margin-top:.5rem">
+          <p style="margin:0 0 .5rem">{profile.summary}</p>
+          <div class="grid g2" style="gap:.6rem">
+            <div>
+              <div class="muted tiny" style="text-transform:uppercase;letter-spacing:.06em">{t("profile.target")}</div>
+              <div>{profile.target_customers}</div>
+            </div>
+            <div>
+              <div class="muted tiny" style="text-transform:uppercase;letter-spacing:.06em">{t("profile.positioning")}</div>
+              <div>{profile.positioning}</div>
+            </div>
+            <div>
+              <div class="muted tiny" style="text-transform:uppercase;letter-spacing:.06em">{t("profile.pricing")}</div>
+              <div>{profile.pricing_summary}</div>
+            </div>
+            {profile.products.length ? (
+              <div>
+                <div class="muted tiny" style="text-transform:uppercase;letter-spacing:.06em">{t("profile.products")}</div>
+                <div>{profile.products.join(" · ")}</div>
+              </div>
+            ) : null}
+          </div>
+          {profile.usps.length ? (
+            <div style="margin-top:.6rem">
+              <div class="muted tiny" style="text-transform:uppercase;letter-spacing:.06em">{t("profile.usps")}</div>
+              <div class="row" style="gap:.35rem;margin-top:.25rem">
+                {profile.usps.map((u) => (
+                  <span class="badge">{u}</span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          <div class="row tiny muted" style="margin-top:.6rem">
+            <span>{t("profile.sources", { n: profile.sources.length })}</span>
+            {profile.provider === "heuristic" ? <span>· {t("profile.heuristic")}</span> : null}
+            <form method="post" action={`/competitors/${competitor.id}/profile`} class="ml">
+              <button class="tiny secondary" type="submit">
+                {t("profile.refresh")}
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : null}
+    </details>
   );
 };
 

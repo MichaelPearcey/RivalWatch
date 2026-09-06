@@ -105,7 +105,8 @@ export class DigestJob {
     const competitors = this.repo.listCompetitors(business.account_id, business.id);
     const names = Object.fromEntries(competitors.map((c) => [c.id, c.name]));
     const pageHealth = competitors.flatMap((c) => this.repo.listPages(business.account_id, c.id)).map((p) => ({ url: p.url, status: p.status }));
-    const users = this.repo.listUsers(business.account_id);
+    // Only verified addresses receive digests: an unverified password sign-up could be a typo pointing at a stranger.
+    const users = this.repo.listUsers(business.account_id).filter((u) => u.email_verified_at);
     const next = nextDigestTime(new Date(), this.cfg.DIGEST_WEEKDAY, this.cfg.DIGEST_HOUR_UTC).toISOString();
 
     const anyProblem = pageHealth.some((p) => p.status !== "ACTIVE");

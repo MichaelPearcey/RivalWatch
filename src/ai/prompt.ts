@@ -38,7 +38,7 @@ Their pricing: ${business.pricing_notes ?? "(not provided)"}
 
 <competitor>
 Name: ${competitor.name}
-Website: ${competitor.website}
+Website: ${competitor.website}${competitor.profile ? `\nWhat we know about them: ${competitor.profile}` : ""}
 Page: ${page.url} (kind: ${page.kind}${page.title ? `, title: "${page.title}"` : ""})
 Detector signals: ${change.signals.join(", ") || "none"}; significance ${change.significance}
 </competitor>
