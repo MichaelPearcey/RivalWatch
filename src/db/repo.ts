@@ -70,6 +70,30 @@ export interface Competitor {
   profile_status: "none" | "pending" | "ready" | "failed";
   profile_generated_at: string | null;
   profile_error: string | null;
+  news_query: string | null;
+  news_checked_at: string | null;
+  news_next_at: string | null;
+}
+
+export interface NewsItem {
+  id: number;
+  account_id: number;
+  competitor_id: number;
+  url: string;
+  url_hash: string;
+  title: string;
+  source: string | null;
+  published_at: string | null;
+  snippet: string | null;
+  fetched_at: string;
+  about_competitor: number | null;
+  category: string | null;
+  magnitude: number | null;
+  summary: string | null;
+  why_it_matters: string | null;
+  provider: string | null;
+  classified_at: string | null;
+  alerted_at: string | null;
 }
 
 /** AI-generated (or heuristic) summary of a competitor, built from their public pages. */
@@ -352,6 +376,10 @@ export class Repo {
   getCompetitor(accountId: number, id: number): Competitor | undefined {
     return this.db.prepare("SELECT * FROM competitors WHERE id = ? AND account_id = ?").get(id, accountId) as Competitor | undefined;
   }
+  /** Cross-tenant read for scheduler jobs only. */
+  getCompetitorAny(id: number): Competitor | undefined {
+    return this.db.prepare("SELECT * FROM competitors WHERE id = ?").get(id) as Competitor | undefined;
+  }
   listCompetitors(accountId: number, businessId: number): Competitor[] {
     return this.db.prepare("SELECT * FROM competitors WHERE business_id = ? AND account_id = ? ORDER BY id").all(businessId, accountId) as unknown as Competitor[];
   }
@@ -362,6 +390,42 @@ export class Repo {
     this.db
       .prepare(`UPDATE competitors SET profile_status = ?, profile_json = ?, profile_error = ?, profile_generated_at = CASE WHEN ? = 'ready' THEN ${NOW} ELSE profile_generated_at END WHERE id = ?`)
       .run(status, profile ? JSON.stringify(profile) : null, error, status, id);
+  }
+  competitorsDueForNews(now: string, limit: number): Competitor[] {
+    return this.db.prepare("SELECT * FROM competitors WHERE news_next_at IS NULL OR news_next_at <= ? ORDER BY news_next_at LIMIT ?").all(now, limit) as unknown as Competitor[];
+  }
+  markNewsChecked(id: number, next: string): void {
+    this.db.prepare(`UPDATE competitors SET news_checked_at = ${NOW}, news_next_at = ? WHERE id = ?`).run(next, id);
+  }
+  insertNewsItem(input: { account_id: number; competitor_id: number; url: string; url_hash: string; title: string; source: string | null; published_at: string | null; snippet: string | null }): NewsItem | undefined {
+    return this.db
+      .prepare(
+        `INSERT INTO news_items (account_id, competitor_id, url, url_hash, title, source, published_at, snippet) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(competitor_id, url_hash) DO NOTHING RETURNING *`,
+      )
+      .get(input.account_id, input.competitor_id, input.url, input.url_hash, input.title, input.source, input.published_at, input.snippet) as NewsItem | undefined;
+  }
+  classifyNewsItem(id: number, v: { about_competitor: boolean; category: string; magnitude: number; summary: string; why_it_matters: string; provider: string }): void {
+    this.db
+      .prepare(`UPDATE news_items SET about_competitor = ?, category = ?, magnitude = ?, summary = ?, why_it_matters = ?, provider = ?, classified_at = ${NOW} WHERE id = ?`)
+      .run(v.about_competitor ? 1 : 0, v.category, v.magnitude, v.summary, v.why_it_matters, v.provider, id);
+  }
+  markNewsAlerted(id: number): void {
+    this.db.prepare(`UPDATE news_items SET alerted_at = ${NOW} WHERE id = ?`).run(id);
+  }
+  listNews(accountId: number, competitorId: number, opts: { limit?: number; relevantOnly?: boolean } = {}): NewsItem[] {
+    return this.db
+      .prepare(`SELECT * FROM news_items WHERE competitor_id = ? AND account_id = ? ${opts.relevantOnly ? "AND about_competitor = 1" : ""} ORDER BY COALESCE(published_at, fetched_at) DESC LIMIT ?`)
+      .all(competitorId, accountId, opts.limit ?? 20) as unknown as NewsItem[];
+  }
+  bigNews(accountId: number, businessId: number, opts: { since?: string; minMagnitude?: number; limit?: number } = {}): NewsItem[] {
+    return this.db
+      .prepare(
+        `SELECT n.* FROM news_items n JOIN competitors c ON c.id = n.competitor_id
+         WHERE n.account_id = ? AND c.business_id = ? AND n.about_competitor = 1 AND n.magnitude >= ? AND COALESCE(n.published_at, n.fetched_at) >= ?
+         ORDER BY n.magnitude DESC, COALESCE(n.published_at, n.fetched_at) DESC LIMIT ?`,
+      )
+      .all(accountId, businessId, opts.minMagnitude ?? 4, opts.since ?? "1970-01-01", opts.limit ?? 10) as unknown as NewsItem[];
   }
   deleteCompetitor(accountId: number, id: number): boolean {
     return this.db.prepare("DELETE FROM competitors WHERE id = ? AND account_id = ?").run(id, accountId).changes > 0;

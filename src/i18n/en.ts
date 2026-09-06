@@ -141,6 +141,20 @@ export const en = {
   "profile.refresh": "Refresh profile",
   "profile.autoadded": "Added automatically",
 
+  // news
+  "news.h": "News",
+  "news.big.h": "Big news",
+  "news.big.p": "Significant developments at your competitors in the last 30 days.",
+  "news.none": "No recent news found for {name}.",
+  "news.refresh": "Check news now",
+  "news.magnitude": "impact {n}/5",
+  "news.notabout": "possibly not about them",
+  "news.alert.subject": "Big competitor news: {competitor}",
+  "news.alert.intro": "Significant news about {competitor}, a competitor of {business}",
+  "news.showall": "Show all headlines",
+  "news.showrelevant": "Show relevant only",
+  "digest.news": "Big news this week",
+
   // consent
   "consent.first.h": "One last thing",
   "consent.first.p": "Before you start, please read and accept how the service works and how we look after your data.",

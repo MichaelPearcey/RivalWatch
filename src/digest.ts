@@ -1,5 +1,5 @@
 import type { Config } from "./config.js";
-import type { Business, Insight, Repo } from "./db/repo.js";
+import type { Business, Insight, NewsItem, Repo } from "./db/repo.js";
 import type { Events } from "./events.js";
 import { isLocale, translator, type Translate } from "./i18n/index.js";
 import { errorFields, log } from "./logger.js";
@@ -22,7 +22,7 @@ export interface DigestContent {
   insightCount: number;
 }
 
-export function buildDigest(business: Business, insights: Insight[], competitorNames: Record<number, string>, publicUrl: string, pageHealth: { url: string; status: string }[], t: Translate = translator("en")): DigestContent {
+export function buildDigest(business: Business, insights: Insight[], competitorNames: Record<number, string>, publicUrl: string, pageHealth: { url: string; status: string }[], t: Translate = translator("en"), bigNews: NewsItem[] = []): DigestContent {
   const sorted = [...insights].sort((a, b) => b.importance - a.importance || b.created_at.localeCompare(a.created_at));
   const top = sorted.slice(0, 10);
   const lines: string[] = [];
@@ -47,6 +47,15 @@ export function buildDigest(business: Business, insights: Insight[], competitorN
            <p style="margin:.3rem 0;color:#444"><strong>${esc(t("digest.why"))}</strong> ${esc(i.why_it_matters)}</p>
          </div>`,
       );
+    }
+  }
+  if (bigNews.length) {
+    lines.push(t("digest.news"), "");
+    html.push(`<h3 style="margin:1rem 0 .3rem">${esc(t("digest.news"))}</h3>`);
+    for (const n of bigNews) {
+      const who = competitorNames[n.competitor_id] ?? "";
+      lines.push(`[${(n.category ?? "news").toUpperCase()} ${n.magnitude}/5] ${who}: ${n.title}`, `  ${n.summary ?? ""}`, `  ${t("digest.why")} ${n.why_it_matters ?? ""}`, `  ${n.url}`, "");
+      html.push(`<div style="border:1px solid #fcd34d;border-radius:8px;padding:.8rem;margin:.6rem 0"><div style="font-size:.8em;color:#666">${esc(who)} · ${esc(n.category ?? "")} · ${n.magnitude}/5 · ${esc(n.source ?? "")}</div><p style="margin:.3rem 0"><a href="${n.url}"><strong>${esc(n.title)}</strong></a></p><p style="margin:.3rem 0">${esc(n.summary ?? "")}</p><p style="margin:.3rem 0;color:#444"><strong>${esc(t("digest.why"))}</strong> ${esc(n.why_it_matters ?? "")}</p></div>`);
     }
   }
   const unhealthy = pageHealth.filter((p) => p.status !== "ACTIVE");
@@ -109,8 +118,9 @@ export class DigestJob {
     const users = this.repo.listUsers(business.account_id).filter((u) => u.email_verified_at);
     const next = nextDigestTime(new Date(), this.cfg.DIGEST_WEEKDAY, this.cfg.DIGEST_HOUR_UTC).toISOString();
 
+    const bigNews = this.repo.bigNews(business.account_id, business.id, { since });
     const anyProblem = pageHealth.some((p) => p.status !== "ACTIVE");
-    if (!force && insights.length === 0 && !anyProblem) {
+    if (!force && insights.length === 0 && !anyProblem && bigNews.length === 0) {
       this.events.record({ type: "digest.skipped", actor, accountId: business.account_id, entity: { type: "business", id: business.id }, result: "skipped", payload: { reason: "nothing_to_report" } });
       if (reschedule) this.repo.setDigestSchedule(business.id, next, false);
       return { sent: false, insightCount: 0, recipients: 0 };
@@ -120,7 +130,7 @@ export class DigestJob {
     let insightCount = 0;
     for (const u of users) {
       // Each recipient gets the digest in their own language.
-      const digest = buildDigest(business, insights, names, this.cfg.publicUrl, pageHealth, translator(isLocale(u.locale) ? u.locale : "en"));
+      const digest = buildDigest(business, insights, names, this.cfg.publicUrl, pageHealth, translator(isLocale(u.locale) ? u.locale : "en"), bigNews);
       insightCount = digest.insightCount;
       const r = await this.mailer.send({ to: u.email, subject: digest.subject, text: digest.text, html: digest.html, kind: "weekly_digest", accountId: business.account_id }, actor);
       if (r.ok) ok++;

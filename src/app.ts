@@ -14,6 +14,8 @@ import { Events } from "./events.js";
 import { setLogLevel } from "./logger.js";
 import { createMailer, type Mailer } from "./mail/index.js";
 import { Pipeline, type PipelineOptions } from "./monitor/pipeline.js";
+import { NewsMonitor } from "./news/index.js";
+import { GoogleNewsRss } from "./news/source.js";
 import { Scheduler } from "./monitor/scheduler.js";
 import { SourceRegistry } from "./sources/types.js";
 import { purgeDeletedAccounts } from "./web/actions.js";
@@ -38,6 +40,7 @@ export interface App {
   agents: Agents;
   backups: Backups;
   llm: JsonLlm;
+  news: NewsMonitor;
   /** Fire-and-forget work (e.g. competitor profiling) is tracked here so tests and shutdown can await it. */
   track<T>(p: Promise<T>): Promise<T>;
   idle(): Promise<void>;
@@ -95,6 +98,7 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
     agents: undefined as unknown as Agents,
     backups: new Backups(cfg, db, events),
     llm: new JsonLlm(cfg, events, overrides.llmClient),
+    news: undefined as unknown as NewsMonitor,
     track(p) {
       tasks.add(p);
       void p.finally(() => tasks.delete(p));
@@ -111,6 +115,8 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
   const tasks = new Set<Promise<unknown>>();
   app.approvals = new Approvals(app);
   app.agents = new Agents(app, cfg, overrides.agentClient);
+  app.news = new NewsMonitor(app, new GoogleNewsRss(fetcher));
+  scheduler.addJob({ name: "news", run: (now) => app.news.runDue(now).then(() => undefined) });
   scheduler.addJob({ name: "approvals_expire", run: (now) => void app.approvals.expireStale(now) });
   scheduler.addJob({ name: "agents", run: (now) => app.agents.runDue(now).then(() => undefined) });
   scheduler.addJob({ name: "backups", run: (now) => app.backups.runDue(now).then(() => undefined) });

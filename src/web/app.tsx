@@ -293,6 +293,16 @@ export function createWebApp(app: App) {
   });
   api.post("/competitors/:id/pages", async (c) => c.json(A.addPage(app, P(c), id(c), A.PageInput.parse(await c.req.json())), 201));
   api.post("/competitors/:id/discover", async (c) => c.json(await A.discoverForCompetitor(app, P(c), id(c))));
+  api.get("/competitors/:id/news", (c) => {
+    A.getCompetitor(app, P(c), id(c));
+    return c.json(repo.listNews(P(c).accountId, id(c), { limit: Math.min(100, Number(c.req.query("limit") ?? 30)), relevantOnly: c.req.query("all") !== "1" }));
+  });
+  api.post("/competitors/:id/news/refresh", async (c) => c.json(await A.refreshNews(app, P(c), id(c))));
+  api.get("/businesses/:id/news/big", (c) => {
+    const p = P(c);
+    A.getBusiness(app, p, id(c));
+    return c.json(repo.bigNews(p.accountId, id(c), { since: new Date(Date.now() - 30 * 86_400_000).toISOString() }));
+  });
   api.post("/competitors/:id/profile", async (c) => {
     const profile = await A.profileCompetitor(app, P(c), id(c));
     return profile ? c.json(profile) : c.json({ error: "profile generation failed" }, 502);
@@ -479,12 +489,13 @@ export function createWebApp(app: App) {
   ui.get("/b/:id", (c) => {
     const p = P(c);
     const business = A.getBusiness(app, p, id(c));
-    const competitors = repo.listCompetitors(p.accountId, business.id).map((competitor) => ({ competitor, pages: repo.listPages(p.accountId, competitor.id), suggestions: repo.listSuggestions(p.accountId, competitor.id) }));
+    const competitors = repo.listCompetitors(p.accountId, business.id).map((competitor) => ({ competitor, pages: repo.listPages(p.accountId, competitor.id), suggestions: repo.listSuggestions(p.accountId, competitor.id), news: repo.listNews(p.accountId, competitor.id, { limit: 15 }) }));
     const includeNoise = c.req.query("noise") === "1";
     const insights = repo.listInsights(p.accountId, business.id, { includeNoise });
     const feedback = repo.feedbackForInsights(p.accountId, insights.map((i) => i.id));
     const competitorNames = Object.fromEntries(competitors.map(({ competitor }) => [competitor.id, competitor.name]));
-    return c.html(<BusinessPage t={T(c)} principal={p} business={business} account={repo.getAccount(p.accountId)!} competitors={competitors} insights={insights} feedback={feedback} competitorNames={competitorNames} includeNoise={includeNoise} flash={c.req.query("flash")} />);
+    const bigNews = repo.bigNews(p.accountId, business.id, { since: new Date(Date.now() - 30 * 86_400_000).toISOString() });
+    return c.html(<BusinessPage t={T(c)} principal={p} business={business} account={repo.getAccount(p.accountId)!} competitors={competitors} bigNews={bigNews} insights={insights} feedback={feedback} competitorNames={competitorNames} includeNoise={includeNoise} flash={c.req.query("flash")} />);
   });
   ui.post("/b/:id/competitors", async (c) => {
     const bid = id(c);
@@ -527,6 +538,13 @@ export function createWebApp(app: App) {
     return tryUi(c, `/b/${competitor.business_id}`, async () => {
       const s = await A.discoverForCompetitor(app, P(c), competitor.id);
       return s.length ? `${s.length} suggestion(s) waiting for your confirmation.` : "No additional pages found on their home page.";
+    });
+  });
+  ui.post("/competitors/:id/news", async (c) => {
+    const competitor = A.getCompetitor(app, P(c), id(c));
+    return tryUi(c, `/b/${competitor.business_id}`, async () => {
+      const r = await A.refreshNews(app, P(c), competitor.id);
+      return r.error ? `News check failed: ${r.error}` : `${r.fetched} headlines checked, ${r.added} new, ${r.big.length} big.`;
     });
   });
   ui.post("/competitors/:id/profile", async (c) => {

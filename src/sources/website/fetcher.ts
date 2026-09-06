@@ -73,10 +73,17 @@ export class PoliteFetcher {
     return { allowed: true };
   }
 
-  /** Full polite GET: robots check + per-host delay + timeout. */
-  async get(url: string): Promise<{ kind: "ok"; response: HttpResponse } | { kind: "blocked"; reason: string }> {
-    const robots = await this.checkRobots(url);
-    if (!robots.allowed) return { kind: "blocked", reason: robots.reason };
+  /**
+   * Full polite GET: robots check + per-host delay + timeout.
+   * `syndication: true` skips the robots check: RSS/Atom feeds are published for
+   * automated readers and robots.txt governs crawling/indexing, not feed consumption.
+   * Callers must still keep frequency low (we use once per day per query).
+   */
+  async get(url: string, opts: { syndication?: boolean } = {}): Promise<{ kind: "ok"; response: HttpResponse } | { kind: "blocked"; reason: string }> {
+    if (!opts.syndication) {
+      const robots = await this.checkRobots(url);
+      if (!robots.allowed) return { kind: "blocked", reason: robots.reason };
+    }
     const response = await this.rawGet(url);
     return { kind: "ok", response };
   }

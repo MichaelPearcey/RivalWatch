@@ -9,6 +9,9 @@ export const BASE = "http://rivalwatch.test";
  * Boots the full application in-memory with the demo competitor site, and
  * routes the fetcher's HTTP calls straight into the Hono app (no sockets).
  */
+/** Per-test stand-ins for external hosts (e.g. news.google.com). Key = hostname. */
+export const externalHosts: Record<string, (url: URL) => Response | Promise<Response>> = {};
+
 export function testApp(overrides: Partial<Config> = {}, appOverrides: AppOverrides = {}): { app: App; web: Hono; base: string } {
   const cfg: Config = {
     ...loadConfig({ PUBLIC_URL: BASE }),
@@ -24,7 +27,13 @@ export function testApp(overrides: Partial<Config> = {}, appOverrides: AppOverri
     ...overrides,
   };
   let web: Hono;
-  const fetchImpl = ((input: string | URL | Request, init?: RequestInit) => web.request(input as string, init)) as typeof fetch;
+  const fetchImpl = ((input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+    const ext = externalHosts[url.hostname];
+    if (ext) return Promise.resolve(ext(url));
+    if (url.hostname !== "rivalwatch.test") return Promise.resolve(new Response("not found", { status: 404 }));
+    return web.request(input as string, init);
+  }) as typeof fetch;
   const app = createApp(cfg, { fetchImpl, ...appOverrides });
   web = createWebApp(app);
   return { app, web, base: BASE };

@@ -3,7 +3,7 @@ import { raw } from "hono/html";
 import type { AgentNote, AgentRunRow, AgentStateRow } from "../agents/types.js";
 import type { Approval } from "../approvals.js";
 import type { Principal } from "../auth.js";
-import type { Account, ApiKey, Business, Change, Competitor, CompetitorProfile, EmailRow, Insight, InsightFeedback, MonitoredPage, PageSuggestion, Snapshot, User } from "../db/repo.js";
+import type { Account, ApiKey, Business, Change, Competitor, CompetitorProfile, EmailRow, Insight, InsightFeedback, MonitoredPage, NewsItem, PageSuggestion, Snapshot, User } from "../db/repo.js";
 import type { EventRow } from "../events.js";
 import { LOCALES, translator, type Locale, type Translate } from "../i18n/index.js";
 import { COMPANY, LEGAL_VERSION } from "../legal.js";
@@ -530,13 +530,14 @@ export const BusinessPage: FC<{
   t: Translate;
   business: Business;
   account: Account;
-  competitors: { competitor: Competitor; pages: MonitoredPage[]; suggestions: PageSuggestion[] }[];
+  competitors: { competitor: Competitor; pages: MonitoredPage[]; suggestions: PageSuggestion[]; news: NewsItem[] }[];
+  bigNews: NewsItem[];
   insights: Insight[];
   feedback: Record<number, InsightFeedback[]>;
   competitorNames: Record<number, string>;
   includeNoise: boolean;
   flash?: string | undefined;
-}> = ({ principal, t, business, account, competitors, insights, feedback, competitorNames, includeNoise, flash }) => {
+}> = ({ principal, t, business, account, competitors, bigNews, insights, feedback, competitorNames, includeNoise, flash }) => {
   const plan = getPlan(account.plan);
   const unhealthy = competitors.flatMap((c) => c.pages).filter((p) => p.status !== "ACTIVE" && p.status !== "PAUSED");
   return (
@@ -558,6 +559,15 @@ export const BusinessPage: FC<{
         </form>
       </div>
       {unhealthy.length ? <div class="card alert">{t("biz.problem", { n: unhealthy.length })}</div> : null}
+      {bigNews.length ? (
+        <div class="card glow" style="border-color:var(--warn)">
+          <h2 style="margin:0 0 .25rem">{t("news.big.h")}</h2>
+          <p class="muted small" style="margin:0 0 .5rem">{t("news.big.p")}</p>
+          {bigNews.map((n) => (
+            <NewsRow t={t} item={n} competitorName={competitorNames[n.competitor_id] ?? ""} big />
+          ))}
+        </div>
+      ) : null}
 
       <div class="row" style="margin-top:1.5rem">
         <h2 style="margin:0">{t("biz.insights")}</h2>
@@ -581,7 +591,7 @@ export const BusinessPage: FC<{
       {insights.map((i) => <InsightCard t={t} insight={i} competitorName={competitorNames[i.competitor_id] ?? "Competitor"} feedback={feedback[i.id] ?? []} />)}
 
       <h2>{t("biz.competitors")}</h2>
-      {competitors.map(({ competitor, pages, suggestions }) => (
+      {competitors.map(({ competitor, pages, suggestions, news }) => (
         <div class="card">
           <div class="row">
             <strong style="font-size:1.05rem">{competitor.name}</strong>
@@ -601,6 +611,20 @@ export const BusinessPage: FC<{
             </form>
           </div>
           <ProfileCard t={t} competitor={competitor} />
+          <details class="card flat" style="margin:.75rem 0 0" open={news.some((n) => (n.magnitude ?? 0) >= 4 && n.about_competitor === 1)}>
+            <summary>
+              <strong class="small">
+                {t("news.h")} <span class="muted">({news.filter((n) => n.about_competitor !== 0).length})</span>
+              </strong>{" "}
+              <span class="muted tiny">{competitor.news_checked_at ? fmtDate(competitor.news_checked_at) : ""}</span>
+            </summary>
+            {news.length === 0 ? <p class="muted small">{t("news.none", { name: competitor.name })}</p> : news.filter((n) => n.about_competitor !== 0).slice(0, 10).map((n) => <NewsRow t={t} item={n} competitorName={competitor.name} />)}
+            <form method="post" action={`/competitors/${competitor.id}/news`} style="margin-top:.5rem">
+              <button class="tiny secondary" type="submit">
+                {t("news.refresh")}
+              </button>
+            </form>
+          </details>
           <table style="margin-top:.75rem">
             <thead>
               <tr>
@@ -711,6 +735,29 @@ export const BusinessPage: FC<{
     </Layout>
   );
 };
+
+const NewsRow: FC<{ t: Translate; item: NewsItem; competitorName: string; big?: boolean }> = ({ t, item, competitorName, big }) => (
+  <div class="small" style={`padding:.55rem 0;border-top:1px solid var(--line)${big ? "" : ""}`}>
+    <div class="row" style="gap:.4rem">
+      {item.category ? <span class={`badge cat${(item.magnitude ?? 0) >= 4 ? " imp-5" : ""}`}>{item.category}</span> : null}
+      {item.magnitude ? <span class={`badge${(item.magnitude ?? 0) >= 4 ? " imp-5" : ""}`}>{t("news.magnitude", { n: item.magnitude })}</span> : null}
+      {item.about_competitor === 0 ? <span class="badge">{t("news.notabout")}</span> : null}
+      <span class="muted tiny">
+        {big ? `${competitorName} · ` : ""}
+        {item.source ?? ""} · {item.published_at ? item.published_at.slice(0, 10) : fmtDate(item.fetched_at).slice(0, 10)}
+      </span>
+    </div>
+    <a href={item.url} target="_blank" rel="noopener noreferrer" style="color:inherit;font-weight:600">
+      {item.title}
+    </a>
+    {item.summary && item.summary !== item.title ? <div class="muted">{item.summary}</div> : null}
+    {item.why_it_matters && (item.magnitude ?? 0) >= 3 ? (
+      <div class="why tiny" style="margin-top:.3rem">
+        <strong>{t("ins.why")}</strong> {item.why_it_matters}
+      </div>
+    ) : null}
+  </div>
+);
 
 const ProfileCard: FC<{ t: Translate; competitor: Competitor }> = ({ t, competitor }) => {
   const profile = competitor.profile_json ? (JSON.parse(competitor.profile_json) as CompetitorProfile) : null;

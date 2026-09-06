@@ -326,6 +326,13 @@ export function resolveSuggestion(app: App, p: Principal, id: number, accept: bo
   return page;
 }
 
+// ---------- News ----------
+
+export async function refreshNews(app: App, p: Principal, competitorId: number) {
+  getCompetitor(app, p, competitorId);
+  return app.news.refresh(competitorId, p.actor);
+}
+
 // ---------- Scanning ----------
 
 export async function scanBusiness(app: App, p: Principal, businessId: number): Promise<{ page: MonitoredPage; outcome: ProcessOutcome }[]> {

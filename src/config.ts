@@ -68,6 +68,10 @@ const ConfigSchema = z.object({
   /** Rolling 24h cap across all agent runs (USD). */
   AGENT_DAILY_COST_CAP_USD: z.coerce.number().nonnegative().default(1),
 
+  /** Competitor news via public news feeds, classified by the LLM. */
+  NEWS_ENABLED: bool(true),
+  NEWS_INTERVAL_HOURS: z.coerce.number().int().min(1).default(24),
+
   /** Nightly SQLite backups (VACUUM INTO + gzip) kept on the volume and optionally uploaded to S3-compatible storage. */
   BACKUP_ENABLED: bool(true),
   BACKUP_DIR: z.string().default("./data/backups"),

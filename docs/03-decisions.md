@@ -266,6 +266,29 @@ legal review is a liability). The admin dashboard is English-only
 (operator-facing). Translations were written by the engineering agent and need
 a native-speaker review before marketing in those languages.
 
+## ADR-021: Competitor news via public RSS, LLM-classified, "big" threshold at 4/5
+
+**Decision.** `NewsSource` interface with `GoogleNewsRss` (free, keyless) as
+the first implementation. One quoted-name query per competitor per
+`NEWS_INTERVAL_HOURS` (24). New headlines are stored (deduped by URL hash) and
+classified in one batched LLM call: `about_competitor` (profile-aided
+disambiguation), category, magnitude 1–5, summary and why-it-matters in the
+owner's language; heuristic fallback without an LLM. Magnitude ≥ 4 and
+about_competitor ⇒ **big**: `news.big` event, dashboard panel, instant email on
+plans with alerts (verified users only), and a section in the weekly digest.
+Items the model marks as not about the competitor are capped at magnitude 2
+regardless of what it said.
+
+**Robots.txt note.** news.google.com disallows `/rss/` for generic crawlers.
+Feeds are syndication endpoints published for automated readers, and
+robots.txt governs crawling/indexing, so feed fetches pass
+`syndication: true` and skip the robots check. Frequency stays at once per
+query per day; nothing else bypasses robots.
+
+**Consequences.** Zero vendor cost for the source; ≈ $0.01 per competitor on
+first run, ≈ $0.001/day thereafter. Live check on "Figma" correctly excluded
+namesakes (anime figures, a crypto token) and graded earnings news as 3/5.
+
 ## INCIDENT-001 (2026-09-06): vendor API keys exposed in an agent transcript
 
 **What happened.** While listing Railway variable *names*, an ad-hoc PowerShell
