@@ -95,6 +95,26 @@ describe("founder assistant", () => {
     expect(t.app.events.list({ type: "agent.action" }).filter((e) => e.actor === "agent:founder")).toHaveLength(2);
   });
 
+  it("nudges the model once when it announces work instead of doing it, and reports output truncation", async () => {
+    const client = scripted([{ text: "Good idea. Let me update the theme now:" }, { tools: [{ name: "remember", input: { kind: "request", title: "Theme change", body: "Owner wants a new palette.", tags: [] } }] }, { text: "Saved the request (#1)." }]);
+    t = testApp(on, { founderClient: client, analyzer: { name: "fake", analyze: async () => { throw new Error("unused"); } } });
+    const admin = await login(t.web, "admin@rivalwatch.test");
+    const conv = (await json<{ id: number }>(t.web, "/api/admin/founder/conversations", { method: "POST", session: admin })).body;
+    const reply = await json<{ content: string; tool_calls: number }>(t.web, `/api/admin/founder/conversations/${conv.id}/messages`, { method: "POST", session: admin, body: JSON.stringify({ text: "Change the theme" }) });
+    expect(reply.body.content).toBe("Saved the request (#1).");
+    expect(reply.body.tool_calls).toBe(1);
+    expect(JSON.stringify(client.sent.at(-1)!.messages)).toContain("Go ahead and do it now");
+
+    // Truncation is surfaced, not hidden.
+    const cut: MessagesClient = { create: (async () => ({ model: "m", content: [{ type: "text", text: "Here is the new file: export const" }], stop_reason: "max_tokens", usage: { input_tokens: 10, output_tokens: 10 } })) as never };
+    t.app.close();
+    t = testApp(on, { founderClient: cut, analyzer: { name: "fake", analyze: async () => { throw new Error("unused"); } } });
+    const admin2 = await login(t.web, "admin@rivalwatch.test");
+    const conv2 = (await json<{ id: number }>(t.web, "/api/admin/founder/conversations", { method: "POST", session: admin2 })).body;
+    const r2 = await json<{ content: string }>(t.web, `/api/admin/founder/conversations/${conv2.id}/messages`, { method: "POST", session: admin2, body: JSON.stringify({ text: "go" }) });
+    expect(r2.body.content).toContain("cut off by the output limit");
+  });
+
   it("enforces the daily budget and isolates conversations per user", async () => {
     t = testApp({ ...on, FOUNDER_DAILY_COST_CAP_USD: 0.01 }, { founderClient: scripted([{ text: "ok" }]), analyzer: { name: "fake", analyze: async () => { throw new Error("unused"); } } });
     const admin = await login(t.web, "admin@rivalwatch.test");

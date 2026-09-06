@@ -110,6 +110,10 @@ section.block{padding:4.5rem 0 1rem}
 .prose h1{font-size:1.75rem}.prose h2{font-size:1.25rem;margin-top:1.75rem}.prose table{font-size:.9rem}
 details summary{cursor:pointer}
 
+/* spinner */
+.spin{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
 /* motion */
 .reveal{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s ease}.reveal.in{opacity:1;transform:none}
 @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}.orb{transform:none!important}html{scroll-behavior:auto}}

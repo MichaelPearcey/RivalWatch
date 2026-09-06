@@ -55,13 +55,16 @@ export const FounderPage: FC<{ principal: Principal; conversations: Conversation
                 </div>
               ),
             )}
-            <form method="post" action={`/admin/founder/${current.id}/send`} style="margin-top:.75rem">
+            <form method="post" action={`/admin/founder/${current.id}/send`} style="margin-top:.75rem" onsubmit="var b=this.querySelector('button');b.disabled=true;b.innerHTML='<span class=spin></span> Thinking…';this.querySelector('textarea').readOnly=true;document.getElementById('busy').style.display='block';">
               <textarea name="text" required maxlength={8000} placeholder="Type your message…" style="min-height:5rem" autofocus></textarea>
               <div class="row" style="margin-top:.5rem">
                 <button type="submit" disabled={!available}>
                   Send
                 </button>
-                <span class="muted tiny">Replies can take 10–40 seconds when tools are used.</span>
+                <span class="muted tiny">Replies take 10–90 seconds when tools are used; editing files is at the slow end.</span>
+              </div>
+              <div id="busy" class="muted small" style="display:none;margin-top:.6rem">
+                <span class="spin"></span> The founder is reading, thinking and possibly editing files. This page will refresh with the reply — please don't close it.
               </div>
             </form>
           </div>
