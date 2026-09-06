@@ -11,7 +11,9 @@ import { openAndMigrate, type Db } from "./db/index.js";
 import { Repo } from "./db/repo.js";
 import { DigestJob } from "./digest.js";
 import { Events } from "./events.js";
+import { Founder } from "./founder/index.js";
 import { setLogLevel } from "./logger.js";
+import { Memory } from "./memory.js";
 import { createMailer, type Mailer } from "./mail/index.js";
 import { Pipeline, type PipelineOptions } from "./monitor/pipeline.js";
 import { NewsMonitor } from "./news/index.js";
@@ -41,6 +43,8 @@ export interface App {
   backups: Backups;
   llm: JsonLlm;
   news: NewsMonitor;
+  memory: Memory;
+  founder: Founder;
   /** Fire-and-forget work (e.g. competitor profiling) is tracked here so tests and shutdown can await it. */
   track<T>(p: Promise<T>): Promise<T>;
   idle(): Promise<void>;
@@ -55,6 +59,8 @@ export interface AppOverrides {
   agentClient?: MessagesClient;
   /** Fake client for JSON completions (competitor profiles) in tests. */
   llmClient?: MessagesClient;
+  /** Fake client for the founder chat in tests. */
+  founderClient?: MessagesClient;
 }
 
 export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
@@ -99,6 +105,8 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
     backups: new Backups(cfg, db, events),
     llm: new JsonLlm(cfg, events, overrides.llmClient),
     news: undefined as unknown as NewsMonitor,
+    memory: new Memory(db, events),
+    founder: undefined as unknown as Founder,
     track(p) {
       tasks.add(p);
       void p.finally(() => tasks.delete(p));
@@ -116,6 +124,7 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
   app.approvals = new Approvals(app);
   app.agents = new Agents(app, cfg, overrides.agentClient);
   app.news = new NewsMonitor(app, new GoogleNewsRss(fetcher));
+  app.founder = new Founder(app, cfg, overrides.founderClient);
   scheduler.addJob({ name: "news", run: (now) => app.news.runDue(now).then(() => undefined) });
   scheduler.addJob({ name: "approvals_expire", run: (now) => void app.approvals.expireStale(now) });
   scheduler.addJob({ name: "agents", run: (now) => app.agents.runDue(now).then(() => undefined) });

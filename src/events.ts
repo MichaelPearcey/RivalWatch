@@ -38,6 +38,8 @@ export type EventType =
   | "news.fetch_failed"
   | "news.big"
   | "alert.sent"
+  | "memory.added"
+  | "memory.updated"
   | "user.email_verified"
   | "page.added"
   | "page.removed"
@@ -89,7 +91,7 @@ export type EventType =
   | "approval.expired"
   | "approval.execution_failed";
 
-export type EntityType = "account" | "user" | "business" | "competitor" | "page" | "snapshot" | "change" | "insight" | "email" | "api_key" | "suggestion" | "approval" | "agent_run" | "news";
+export type EntityType = "account" | "user" | "business" | "competitor" | "page" | "snapshot" | "change" | "insight" | "email" | "api_key" | "suggestion" | "approval" | "agent_run" | "news" | "memory";
 export type RiskLevel = "low" | "medium" | "high";
 export type EventResult = "ok" | "failed" | "pending" | "denied" | "skipped";
 

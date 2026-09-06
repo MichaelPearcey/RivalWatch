@@ -47,6 +47,7 @@ export const Layout: FC<{ title: string; children?: unknown; flash?: string | un
               <a class="link" href="/">{t("nav.dashboard")}</a>
               <a class="link hide-sm" href="/settings">{t("nav.settings")}</a>
               {principal.isAdmin ? <a class="link" href="/admin">{t("nav.admin")}</a> : null}
+              {principal.isAdmin ? <a class="link hide-sm" href="/admin/founder">Founder</a> : null}
             </>
           ) : (
             <>

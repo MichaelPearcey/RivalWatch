@@ -68,6 +68,13 @@ const ConfigSchema = z.object({
   /** Rolling 24h cap across all agent runs (USD). */
   AGENT_DAILY_COST_CAP_USD: z.coerce.number().nonnegative().default(1),
 
+  /** Founder assistant chat in /admin. Sonnet-class by default for judgement; separate budget. */
+  FOUNDER_MODEL: z.string().default("claude-sonnet-4-5"),
+  FOUNDER_INPUT_COST_PER_MTOK: z.coerce.number().nonnegative().default(3),
+  FOUNDER_OUTPUT_COST_PER_MTOK: z.coerce.number().nonnegative().default(15),
+  FOUNDER_MAX_COST_PER_TURN_USD: z.coerce.number().nonnegative().default(0.5),
+  FOUNDER_DAILY_COST_CAP_USD: z.coerce.number().nonnegative().default(5),
+
   /** Competitor news via public news feeds, classified by the LLM. */
   NEWS_ENABLED: bool(true),
   NEWS_INTERVAL_HOURS: z.coerce.number().int().min(1).default(24),

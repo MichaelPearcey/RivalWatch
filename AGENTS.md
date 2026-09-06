@@ -11,6 +11,23 @@ Read `README.md` and `docs/` first. This file is operational guidance.
 - PowerShell `Get-Content | Set-Content` round-trips silently mangle the display
   of UTF-8 (`£`, `€`) and can change encodings. Use the editor tools for edits.
 
+## Shared memory protocol (Devin: do this every session)
+
+The production app holds a shared memory (`memory_notes`) written by the owner,
+the person the product is built for, and the in-app Founder assistant at
+`/admin/founder`. Requests for product changes arrive there as
+`kind: request, status: open`. Devin is expected to:
+
+1. **Start of session**: `npm run cli -- memory pull open` (needs
+   `RIVALWATCH_URL` and `RIVALWATCH_API_KEY` in `.env`; the key is an admin's
+   API key from `/settings`). Treat open requests as work to plan with the owner.
+2. **After shipping** something requested: `npm run cli -- memory done <id>` and
+   `npm run cli -- memory push journal "<title>" "<what changed, where>"`.
+3. **When learning a lasting fact or preference** from the owner in chat, push
+   it as `fact`/`preference` so the Founder assistant knows it too.
+
+Never put secrets in memory notes; they are readable by every admin.
+
 ## Commands
 
 ```bash

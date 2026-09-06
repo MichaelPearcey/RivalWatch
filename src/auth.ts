@@ -264,7 +264,8 @@ export class Auth {
     if (!key) return undefined;
     const found = this.repo.apiKeyByHash(hashToken(key));
     if (!found) return undefined;
-    return { user: found.user, accountId: found.account_id, actor: `agent:${found.name}`, via: "api_key", isAdmin: false };
+    // A key acts on behalf of the user who minted it, including their admin status.
+    return { user: found.user, accountId: found.account_id, actor: `agent:${found.name}`, via: "api_key", isAdmin: found.user.is_admin === 1 };
   }
 
   logout(sessionToken: string | undefined, principal: Principal | undefined): void {

@@ -16,6 +16,8 @@ import { adminOverview } from "./admin.js";
 import { createDemoSite } from "./demo-site.js";
 import { LANG_COOKIE, isLocale, resolveLocale, translator, type Translate } from "../i18n/index.js";
 import { crawlerPage, privacyPolicy, termsOfService } from "../legal.js";
+import { MEMORY_KINDS } from "../memory.js";
+import { FounderPage } from "./founder-views.js";
 import { AdminPage, BusinessPage, BusinessesPage, ConsentPage, InsightDetailPage, LandingPage, LegalPage, LoginPage, PageDetailPage, PricingPage, SettingsPage } from "./views.js";
 
 type Env = { Variables: { principal: Principal | undefined; t: Translate } };
@@ -442,6 +444,36 @@ export function createWebApp(app: App) {
   });
   api.post("/admin/scheduler/tick", requireAdmin, async (c) => c.json({ processed: await app.scheduler.tick() }));
 
+  // Shared memory (admin + agents with admin-owned keys). Devin pulls/pushes through this.
+  api.get("/admin/memory", requireAdmin, (c) => {
+    const q = c.req.query();
+    return c.json(app.memory.list({ ...(q.kind ? { kind: q.kind as never } : {}), ...(q.status ? { status: q.status as never } : {}), ...(q.since_id ? { sinceId: Number(q.since_id) } : {}), limit: Math.min(500, Number(q.limit ?? 100)) }));
+  });
+  api.get("/admin/memory/search", requireAdmin, (c) => c.json(app.memory.search(c.req.query("q") ?? "", Number(c.req.query("limit") ?? 20))));
+  api.post("/admin/memory", requireAdmin, async (c) => {
+    const p = P(c);
+    const body = z.object({ kind: z.enum(MEMORY_KINDS), title: z.string().min(1).max(200), body: z.string().min(1).max(20_000), tags: z.array(z.string()).max(12).optional(), source: z.string().max(200).optional(), author: z.string().max(64).optional() }).parse(await c.req.json());
+    // Agents may declare themselves (e.g. agent:devin); users are always attributed to their own id.
+    const author = p.via === "api_key" && body.author && /^agent:[\w.-]+$/.test(body.author) ? body.author : p.actor;
+    return c.json(app.memory.add({ author, kind: body.kind, title: body.title, body: body.body, tags: body.tags ?? [], source: body.source ?? null }), 201);
+  });
+  api.post("/admin/memory/:id/status", requireAdmin, async (c) => {
+    const { status } = z.object({ status: z.enum(["open", "done", "superseded"]) }).parse(await c.req.json());
+    app.memory.setStatus(id(c), status, P(c).actor);
+    return c.body(null, 204);
+  });
+
+  // Founder chat (admin only, browser sessions)
+  api.post("/admin/founder/conversations", requireAdmin, (c) => c.json(app.founder.createConversation(P(c).user.id), 201));
+  api.post("/admin/founder/conversations/:id/messages", requireAdmin, async (c) => {
+    const { text } = z.object({ text: z.string().min(1).max(8000) }).parse(await c.req.json());
+    try {
+      return c.json(await app.founder.send(P(c), id(c), text));
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 409);
+    }
+  });
+
   // Backups (operator-only)
   api.get("/admin/backups", requireAdmin, (c) => c.json({ offsite: app.backups.offsiteConfigured, local: app.backups.listLocal(), last: events.list({ types: ["backup.completed", "backup.failed"], limit: 5 }) }));
   api.post("/admin/backups/run", requireAdmin, async (c) => c.json(await app.backups.run(P(c).actor)));
@@ -673,6 +705,39 @@ export function createWebApp(app: App) {
   );
 
   ui.get("/admin", requireAdmin, (c) => c.html(<AdminPage principal={P(c)} o={adminOverview(app)} flash={c.req.query("flash")} />));
+
+  // Founder assistant
+  const founderPage = (c: Ctx, convId: number | null) => {
+    const p = P(c);
+    const conversations = app.founder.listConversations(p.user.id);
+    const current = convId ? (app.founder.getConversation(p.user.id, convId) ?? null) : (conversations[0] ?? null);
+    return c.html(<FounderPage principal={p} conversations={conversations} current={current} messages={current ? app.founder.messages(current.id) : []} memory={app.memory.list({ limit: 25 })} available={app.founder.available} model={app.founder.model} flash={c.req.query("flash")} />);
+  };
+  ui.get("/admin/founder", requireAdmin, (c) => founderPage(c, null));
+  ui.get("/admin/founder/:id", requireAdmin, (c) => founderPage(c, id(c)));
+  ui.post("/admin/founder/new", requireAdmin, (c) => c.redirect(`/admin/founder/${app.founder.createConversation(P(c).user.id).id}`));
+  ui.post("/admin/founder/:id/send", requireAdmin, async (c) => {
+    const cid = id(c);
+    const form = await bodyOf(c);
+    try {
+      await app.founder.send(P(c), cid, String(form.text ?? "").slice(0, 8000));
+      return c.redirect(`/admin/founder/${cid}`);
+    } catch (err) {
+      return c.redirect(`/admin/founder/${cid}?flash=${encodeURIComponent((err as Error).message)}`);
+    }
+  });
+  ui.post("/admin/memory", requireAdmin, async (c) => {
+    const form = await bodyOf(c);
+    const parsed = z.object({ kind: z.enum(MEMORY_KINDS), title: z.string().min(1).max(200), body: z.string().min(1).max(20_000) }).safeParse(form);
+    if (parsed.success) app.memory.add({ author: P(c).actor, ...parsed.data, source: "admin-ui" });
+    return c.redirect("/admin/founder");
+  });
+  ui.post("/admin/memory/:id/status", requireAdmin, async (c) => {
+    const form = await bodyOf(c);
+    const status = z.enum(["open", "done", "superseded"]).safeParse(form.status);
+    if (status.success) app.memory.setStatus(id(c), status.data, P(c).actor);
+    return c.redirect("/admin/founder");
+  });
   ui.post("/admin/accounts/:id/plan", requireAdmin, async (c) => {
     const aid = id(c);
     return tryUi(c, "/admin", async () => {

@@ -289,6 +289,34 @@ query per day; nothing else bypasses robots.
 first run, ≈ $0.001/day thereafter. Live check on "Figma" correctly excluded
 namesakes (anime figures, a crypto token) and graded earnings news as 3/5.
 
+## ADR-022: Founder assistant + shared memory as the human/agent bridge
+
+**Context.** The owner wants the person the product is built for to be able to
+talk to "the founder" and ask for changes herself, and wants those conversations
+to reach Devin (the engineering agent, which runs in a local CLI and cannot be
+reached from the web).
+
+**Decision.** (1) `memory_notes`: an append-mostly store of facts, decisions,
+requests, preferences and journal entries, authored by users, the Founder
+assistant (`agent:founder`) or Devin (`agent:devin`, via an admin API key).
+Exposed at `/api/admin/memory` and in the admin UI. Devin pulls it at session
+start and pushes back what it shipped (protocol in `AGENTS.md`). (2) A Founder
+assistant chat at `/admin/founder` (admin-only, per-user conversations) using a
+Sonnet-class model with the agents' read tools plus `remember`,
+`search_memory`, `update_memory_status`, `request_approval`, `write_note`. Its
+system prompt embeds the memory briefing and the project docs, so it can
+explain the company truthfully and turns change requests into memory notes.
+Separate budget (`FOUNDER_*`), every model call and write-tool use audited.
+
+**Phase B (pending a fine-grained GitHub token).** Add repo tools: read/search
+files, `propose_change` -> branch + pull request, read CI results; merge is a
+high-risk approval executed by the system. The assistant never writes to
+`main`.
+
+**Consequences.** ≈ $0.05 per exchange; conversations are stored in the
+database (exportable, deletable with the account). API keys now inherit their
+owner's admin flag so Devin's key can reach admin endpoints.
+
 ## INCIDENT-001 (2026-09-06): vendor API keys exposed in an agent transcript
 
 **What happened.** While listing Railway variable *names*, an ad-hoc PowerShell

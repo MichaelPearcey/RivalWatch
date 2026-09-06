@@ -13,6 +13,9 @@ const USAGE = `rivalwatch CLI
   make-admin <email>      create (if needed) and flag a user as platform admin
   login-link <email>      print a one-time sign-in link (local/ops use; requires log email provider or prints anyway)
   backup                  write a gzipped SQLite backup now (and upload if BACKUP_S3_* is set)
+  memory pull [open]      read shared memory from production (Devin: run at the start of every session)
+  memory push <kind> <title> <body...>   write a note to shared memory as agent:devin
+  memory done <id>        mark a request fulfilled
   demo                    start the server with the demo site, seed a demo account, run the full loop, keep serving
 `;
 
@@ -64,6 +67,35 @@ async function main(argv: string[]): Promise<void> {
       app.close();
       if (!r.ok) process.exitCode = 1;
       return;
+    }
+    case "memory": {
+      // Devin <-> production shared memory. Requires RIVALWATCH_URL and RIVALWATCH_API_KEY (an admin's API key) in .env.
+      const base = (process.env.RIVALWATCH_URL ?? "").replace(/\/$/, "");
+      const key = process.env.RIVALWATCH_API_KEY;
+      if (!base || !key) throw new Error("set RIVALWATCH_URL and RIVALWATCH_API_KEY in .env (create the key in /settings as an admin)");
+      const headers = { authorization: `Bearer ${key}`, "content-type": "application/json" };
+      const sub = rest[0];
+      if (sub === "pull") {
+        const res = await fetch(`${base}/api/admin/memory?limit=200${rest[1] ? `&status=${rest[1]}` : ""}`, { headers });
+        if (!res.ok) throw new Error(`pull failed: HTTP ${res.status}`);
+        const notes = (await res.json()) as { id: number; created_at: string; author: string; kind: string; status: string; title: string; body: string; tags: string }[];
+        for (const n of notes.reverse()) process.stdout.write(`#${n.id} [${n.kind}/${n.status}] ${n.created_at.slice(0, 16)} ${n.author}\n  ${n.title}\n  ${n.body.replace(/\n/g, "\n  ")}\n${n.tags ? `  tags: ${n.tags}\n` : ""}\n`);
+        return;
+      }
+      if (sub === "push") {
+        const [, kind, title, ...bodyParts] = rest;
+        if (!kind || !title || bodyParts.length === 0) throw new Error("usage: memory push <kind> <title> <body...>");
+        const res = await fetch(`${base}/api/admin/memory`, { method: "POST", headers, body: JSON.stringify({ kind, title, body: bodyParts.join(" "), author: "agent:devin", source: "devin-cli" }) });
+        if (!res.ok) throw new Error(`push failed: HTTP ${res.status} ${await res.text()}`);
+        process.stdout.write(`saved #${((await res.json()) as { id: number }).id}\n`);
+        return;
+      }
+      if (sub === "done") {
+        const res = await fetch(`${base}/api/admin/memory/${Number(rest[1])}/status`, { method: "POST", headers, body: JSON.stringify({ status: "done" }) });
+        process.stdout.write(res.ok ? "marked done\n" : `failed: HTTP ${res.status}\n`);
+        return;
+      }
+      throw new Error("usage: memory pull [open] | memory push <kind> <title> <body...> | memory done <id>");
     }
     case "demo":
       return demo(cfg);
