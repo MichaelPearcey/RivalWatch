@@ -1,6 +1,6 @@
 import type { AnalysisInput } from "./types.js";
 
-export const PROMPT_VERSION = "v1";
+export const PROMPT_VERSION = "v2"; // v2: output language instruction
 
 const MAX_LINES = 60;
 const MAX_LINE_CHARS = 300;
@@ -28,7 +28,9 @@ Respond with ONLY a JSON object with keys: matters (boolean), category (one of p
 
 export function buildUserPrompt(input: AnalysisInput): string {
   const { business, competitor, page, change } = input;
-  return `<customer>
+  return `Write headline, summary and why_it_matters in ${input.language ?? "English"}. Keep the JSON keys and the category value in English. Quote prices exactly as they appear.
+
+<customer>
 Business: ${business.name}
 What they do: ${business.description ?? "(not provided)"}
 Their pricing: ${business.pricing_notes ?? "(not provided)"}

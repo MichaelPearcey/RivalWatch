@@ -14,10 +14,11 @@ import { PLANS } from "../plans.js";
 import * as A from "./actions.js";
 import { adminOverview } from "./admin.js";
 import { createDemoSite } from "./demo-site.js";
+import { LANG_COOKIE, isLocale, resolveLocale, translator, type Translate } from "../i18n/index.js";
 import { crawlerPage, privacyPolicy, termsOfService } from "../legal.js";
 import { AdminPage, BusinessPage, BusinessesPage, ConsentPage, InsightDetailPage, LandingPage, LegalPage, LoginPage, PageDetailPage, PricingPage, SettingsPage } from "./views.js";
 
-type Env = { Variables: { principal: Principal | undefined } };
+type Env = { Variables: { principal: Principal | undefined; t: Translate } };
 type Ctx = Context<Env>;
 
 const idParam = z.coerce.number().int().positive();
@@ -33,7 +34,7 @@ export function createWebApp(app: App) {
   web.onError((err, c) => {
     const wantsHtml = !c.req.path.startsWith("/api/") && (c.req.header("accept") ?? "").includes("text/html");
     if (err instanceof A.ActionError || err instanceof AuthError || err instanceof ApprovalError) {
-      if (wantsHtml && err.status === 404) return c.html(<LoginPage error="Not found." />, 404);
+      if (wantsHtml && err.status === 404) return c.html(<LoginPage t={T(c)} error="Not found." />, 404);
       return c.json({ error: err.message }, err.status as 400);
     }
     if (err instanceof z.ZodError) return c.json({ error: "validation failed", issues: err.issues.map((i) => ({ path: i.path.join("."), message: i.message })) }, 400);
@@ -41,12 +42,27 @@ export function createWebApp(app: App) {
     return c.json({ error: "internal error" }, 500);
   });
 
-  // ---------------- Authentication middleware ----------------
+  // ---------------- Authentication + locale middleware ----------------
   web.use("*", async (c, next) => {
     const bearer = c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
     const principal = bearer ? auth.principalFromApiKey(bearer) : auth.principalFromSession(getCookie(c, SESSION_COOKIE));
     c.set("principal", principal);
+    const locale = resolveLocale({ cookie: getCookie(c, LANG_COOKIE), user: principal?.user.locale, acceptLanguage: c.req.header("accept-language") });
+    c.set("t", translator(locale));
     await next();
+  });
+  const T = (c: Ctx): Translate => c.get("t");
+
+  /** Language switcher: remembers the choice in a functional cookie and, when signed in, on the user. */
+  web.get("/lang", (c) => {
+    const lang = c.req.query("lang");
+    if (isLocale(lang)) {
+      setCookie(c, LANG_COOKIE, lang, { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: 365 * 86_400 });
+      const p = c.get("principal");
+      if (p?.via === "session") repo.setUserLocale(p.user.id, lang);
+    }
+    const back = c.req.header("referer");
+    return c.redirect(back && back.startsWith(cfg.publicUrl) ? back : "/");
   });
 
   const requireAuth = async (c: Ctx, next: Next) => {
@@ -102,40 +118,40 @@ export function createWebApp(app: App) {
   // Public marketing + legal pages
   web.get("/", (c) => {
     const p = c.get("principal");
-    if (!p) return c.html(<LandingPage />);
+    if (!p) return c.html(<LandingPage t={T(c)} />);
     if (!auth.hasCurrentConsent(p.user)) return c.redirect("/legal/accept?next=%2F");
-    return c.html(<BusinessesPage principal={p} businesses={repo.listBusinesses(p.accountId)} account={repo.getAccount(p.accountId)!} flash={c.req.query("flash")} />);
+    return c.html(<BusinessesPage t={T(c)} principal={p} businesses={repo.listBusinesses(p.accountId)} account={repo.getAccount(p.accountId)!} flash={c.req.query("flash")} />);
   });
-  web.get("/pricing", (c) => c.html(<PricingPage principal={c.get("principal")} />));
-  web.get("/privacy", (c) => c.html(<LegalPage title="Privacy Policy" markdown={privacyPolicy()} principal={c.get("principal")} />));
-  web.get("/terms", (c) => c.html(<LegalPage title="Terms of Service" markdown={termsOfService()} principal={c.get("principal")} />));
-  web.get("/bot", (c) => c.html(<LegalPage title="About our crawler" markdown={crawlerPage()} principal={c.get("principal")} />));
+  web.get("/pricing", (c) => c.html(<PricingPage t={T(c)} principal={c.get("principal")} />));
+  web.get("/privacy", (c) => c.html(<LegalPage t={T(c)} title="Privacy Policy" markdown={privacyPolicy()} principal={c.get("principal")} />));
+  web.get("/terms", (c) => c.html(<LegalPage t={T(c)} title="Terms of Service" markdown={termsOfService()} principal={c.get("principal")} />));
+  web.get("/bot", (c) => c.html(<LegalPage t={T(c)} title="About our crawler" markdown={crawlerPage()} principal={c.get("principal")} />));
   web.get("/legal/accept", (c) => {
     const p = c.get("principal");
     if (!p) return c.redirect("/login");
     if (auth.hasCurrentConsent(p.user)) return c.redirect(safeNext(c.req.query("next")));
-    return c.html(<ConsentPage principal={p} next={c.req.query("next")} firstTime={repo.listConsents(p.user.id).length === 0} />);
+    return c.html(<ConsentPage t={T(c)} principal={p} next={c.req.query("next")} firstTime={repo.listConsents(p.user.id).length === 0} />);
   });
   web.post("/legal/accept", async (c) => {
     const p = c.get("principal");
     if (!p) return c.redirect("/login");
     const form = await bodyOf(c);
-    if (form.terms !== "1" || form.privacy !== "1") return c.html(<ConsentPage principal={p} next={String(form.next ?? "/")} firstTime={repo.listConsents(p.user.id).length === 0} error="Please tick both boxes to continue." />, 400);
+    if (form.terms !== "1" || form.privacy !== "1") return c.html(<ConsentPage t={T(c)} principal={p} next={String(form.next ?? "/")} firstTime={repo.listConsents(p.user.id).length === 0} error="Please tick both boxes to continue." />, 400);
     auth.acceptLegal(p.user, ipOf(c));
     return c.redirect(safeNext(form.next));
   });
 
-  web.get("/login", (c) => (c.get("principal") ? c.redirect("/") : c.html(<LoginPage mode={c.req.query("mode") === "signup" ? "signup" : "signin"} next={c.req.query("next")} />)));
+  web.get("/login", (c) => (c.get("principal") ? c.redirect("/") : c.html(<LoginPage t={T(c)} mode={c.req.query("mode") === "signup" ? "signup" : "signin"} next={c.req.query("next")} />)));
   web.post("/auth/login", async (c) => {
     const body = await bodyOf(c);
     const email = z.string().email().max(254).parse(body.email);
     try {
       const r = await auth.requestLogin(email, ipOf(c));
       if (isJson(c)) return c.json({ sent: r.sent, ...(r.devLink ? { dev_link: r.devLink } : {}), ...(r.error ? { error: r.error } : {}) }, r.sent ? 200 : 502);
-      if (!r.sent) return c.html(<LoginPage error={`We couldn't send your sign-in email. Email provider said: ${r.error ?? "unknown error"}`} email={email} />, 502);
-      return c.html(<LoginPage sent email={email} devLink={r.devLink} />);
+      if (!r.sent) return c.html(<LoginPage t={T(c)} error={`We couldn't send your sign-in email. Email provider said: ${r.error ?? "unknown error"}`} email={email} />, 502);
+      return c.html(<LoginPage t={T(c)} sent email={email} devLink={r.devLink} />);
     } catch (err) {
-      if (err instanceof AuthError) return isJson(c) ? c.json({ error: err.message }, err.status) : c.html(<LoginPage error={err.message} email={email} />, err.status);
+      if (err instanceof AuthError) return isJson(c) ? c.json({ error: err.message }, err.status) : c.html(<LoginPage t={T(c)} error={err.message} email={email} />, err.status);
       throw err;
     }
   });
@@ -148,7 +164,7 @@ export function createWebApp(app: App) {
       if (isJson(c)) return c.json({ ok: true });
       return c.redirect(safeNext(body.next));
     } catch (err) {
-      if (err instanceof AuthError) return isJson(c) ? c.json({ error: err.message }, err.status) : c.html(<LoginPage error={err.message} email={email} />, err.status);
+      if (err instanceof AuthError) return isJson(c) ? c.json({ error: err.message }, err.status) : c.html(<LoginPage t={T(c)} error={err.message} email={email} />, err.status);
       throw err;
     }
   });
@@ -159,7 +175,7 @@ export function createWebApp(app: App) {
       setSession(c, sessionToken);
       return c.redirect("/");
     } catch (err) {
-      if (err instanceof AuthError) return c.html(<LoginPage error={err.message} />, err.status);
+      if (err instanceof AuthError) return c.html(<LoginPage t={T(c)} error={err.message} />, err.status);
       throw err;
     }
   });
@@ -177,7 +193,7 @@ export function createWebApp(app: App) {
       auth.acceptLegal(user, ipOf(c));
       return c.redirect("/admin");
     } catch (err) {
-      if (err instanceof AuthError) return c.html(<LoginPage error={err.message} />, err.status);
+      if (err instanceof AuthError) return c.html(<LoginPage t={T(c)} error={err.message} />, err.status);
       throw err;
     }
   });
@@ -201,7 +217,14 @@ export function createWebApp(app: App) {
 
   api.get("/me", (c) => {
     const p = P(c);
-    return c.json({ user: { id: p.user.id, email: p.user.email, is_admin: p.isAdmin, has_password: !!p.user.password_hash }, account: repo.getAccount(p.accountId), actor: p.actor, via: p.via });
+    return c.json({ user: { id: p.user.id, email: p.user.email, is_admin: p.isAdmin, has_password: !!p.user.password_hash, locale: p.user.locale }, account: repo.getAccount(p.accountId), actor: p.actor, via: p.via });
+  });
+  api.patch("/me", async (c) => {
+    const p = P(c);
+    const { locale } = z.object({ locale: z.string() }).parse(await c.req.json());
+    if (!isLocale(locale)) return c.json({ error: "unsupported locale" }, 400);
+    repo.setUserLocale(p.user.id, locale);
+    return c.json({ locale });
   });
   api.post("/me/password", async (c) => {
     const p = P(c);
@@ -428,7 +451,7 @@ export function createWebApp(app: App) {
     const insights = repo.listInsights(p.accountId, business.id, { includeNoise });
     const feedback = repo.feedbackForInsights(p.accountId, insights.map((i) => i.id));
     const competitorNames = Object.fromEntries(competitors.map(({ competitor }) => [competitor.id, competitor.name]));
-    return c.html(<BusinessPage principal={p} business={business} account={repo.getAccount(p.accountId)!} competitors={competitors} insights={insights} feedback={feedback} competitorNames={competitorNames} includeNoise={includeNoise} flash={c.req.query("flash")} />);
+    return c.html(<BusinessPage t={T(c)} principal={p} business={business} account={repo.getAccount(p.accountId)!} competitors={competitors} insights={insights} feedback={feedback} competitorNames={competitorNames} includeNoise={includeNoise} flash={c.req.query("flash")} />);
   });
   ui.post("/b/:id/competitors", async (c) => {
     const bid = id(c);
@@ -508,7 +531,7 @@ export function createWebApp(app: App) {
     const page = A.getPage(app, p, id(c));
     const competitor = A.getCompetitor(app, p, page.competitor_id);
     const latest = repo.latestSnapshot(page.id);
-    return c.html(<PageDetailPage principal={p} page={page} competitor={competitor} snapshots={repo.listSnapshots(p.accountId, page.id)} changes={repo.listChanges(p.accountId, page.id)} latestText={latest?.text ?? null} />);
+    return c.html(<PageDetailPage t={T(c)} principal={p} page={page} competitor={competitor} snapshots={repo.listSnapshots(p.accountId, page.id)} changes={repo.listChanges(p.accountId, page.id)} latestText={latest?.text ?? null} />);
   });
   ui.get("/insights/:id", (c) => {
     const p = P(c);
@@ -519,7 +542,7 @@ export function createWebApp(app: App) {
     const business = competitor ? repo.getBusiness(p.accountId, competitor.business_id) : undefined;
     if (!change || !page || !competitor || !business) return c.notFound();
     repo.markInsightRead(p.accountId, insight.id);
-    return c.html(<InsightDetailPage principal={p} insight={insight} change={change} page={page} competitor={competitor} business={business} feedback={repo.feedbackForInsights(p.accountId, [insight.id])[insight.id] ?? []} />);
+    return c.html(<InsightDetailPage t={T(c)} principal={p} insight={insight} change={change} page={page} competitor={competitor} business={business} feedback={repo.feedbackForInsights(p.accountId, [insight.id])[insight.id] ?? []} />);
   });
   ui.post("/insights/:id/feedback", async (c) => {
     const p = P(c);
@@ -538,17 +561,25 @@ export function createWebApp(app: App) {
 
   ui.get("/settings", (c) => {
     const p = P(c);
-    return c.html(<SettingsPage principal={p} account={repo.getAccount(p.accountId)!} users={repo.listUsers(p.accountId)} keys={repo.listApiKeys(p.accountId)} flash={c.req.query("flash")} />);
+    return c.html(<SettingsPage t={T(c)} principal={p} account={repo.getAccount(p.accountId)!} users={repo.listUsers(p.accountId)} keys={repo.listApiKeys(p.accountId)} flash={c.req.query("flash")} />);
   });
   ui.post("/settings/api-keys", async (c) => {
     const p = P(c);
     const form = await bodyOf(c);
     const name = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/).parse(form.name);
     const { key } = auth.createApiKey(p, name);
-    return c.html(<SettingsPage principal={p} account={repo.getAccount(p.accountId)!} users={repo.listUsers(p.accountId)} keys={repo.listApiKeys(p.accountId)} newKey={key} />);
+    return c.html(<SettingsPage t={T(c)} principal={p} account={repo.getAccount(p.accountId)!} users={repo.listUsers(p.accountId)} keys={repo.listApiKeys(p.accountId)} newKey={key} />);
   });
   ui.post("/settings/api-keys/:id/revoke", (c) => {
     auth.revokeApiKey(P(c), id(c));
+    return c.redirect("/settings");
+  });
+  ui.post("/settings/language", async (c) => {
+    const form = await bodyOf(c);
+    if (isLocale(form.lang)) {
+      repo.setUserLocale(P(c).user.id, form.lang);
+      setCookie(c, LANG_COOKIE, form.lang, { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: 365 * 86_400 });
+    }
     return c.redirect("/settings");
   });
   ui.post("/settings/password", async (c) =>

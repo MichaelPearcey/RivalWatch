@@ -9,7 +9,7 @@
  * This is a founder-written draft; a solicitor should review before paid launch.
  */
 
-export const LEGAL_VERSION = "2026-09-06";
+export const LEGAL_VERSION = "2026-09-06b"; // b: language-preference cookie disclosed
 
 export const COMPANY = {
   product: "RivalWatch",
@@ -54,7 +54,8 @@ export function privacyPolicy(): string {
 | Competitor websites and pages you ask us to monitor, and what we fetch from them | The service itself | Contract |
 | Your feedback on insights | To improve the analysis | Contract / legitimate interests |
 | Technical logs (IP address on sign-in, timestamps, actions taken in the app) | Security, fraud prevention, audit trail | Legitimate interests |
-| Cookies | One strictly necessary session cookie (\`rw_session\`). No analytics or advertising cookies. | Not consent-based (strictly necessary) |
+| Cookies | A strictly necessary session cookie (\`rw_session\`) and, only if you pick a language, a functional preference cookie (\`rw_lang\`) that remembers it. No analytics or advertising cookies. | Not consent-based (strictly necessary / user-requested functionality) |
+| Language preference | To show the app, emails and AI insights in your chosen language | Contract |
 
 We do not sell personal data, profile you for advertising, or make automated decisions with legal or similarly significant effects on you.
 

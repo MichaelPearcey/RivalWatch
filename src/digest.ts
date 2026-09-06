@@ -1,6 +1,7 @@
 import type { Config } from "./config.js";
 import type { Business, Insight, Repo } from "./db/repo.js";
 import type { Events } from "./events.js";
+import { isLocale, translator, type Translate } from "./i18n/index.js";
 import { errorFields, log } from "./logger.js";
 import type { Mailer } from "./mail/index.js";
 
@@ -21,36 +22,37 @@ export interface DigestContent {
   insightCount: number;
 }
 
-export function buildDigest(business: Business, insights: Insight[], competitorNames: Record<number, string>, publicUrl: string, pageHealth: { url: string; status: string }[]): DigestContent {
+export function buildDigest(business: Business, insights: Insight[], competitorNames: Record<number, string>, publicUrl: string, pageHealth: { url: string; status: string }[], t: Translate = translator("en")): DigestContent {
   const sorted = [...insights].sort((a, b) => b.importance - a.importance || b.created_at.localeCompare(a.created_at));
   const top = sorted.slice(0, 10);
   const lines: string[] = [];
   const html: string[] = [];
-  lines.push(`Weekly competitor digest for ${business.name}`, "");
-  html.push(`<h2 style="margin:0 0 .5rem">Weekly competitor digest for ${esc(business.name)}</h2>`);
+  const title = t("digest.title", { business: business.name });
+  lines.push(title, "");
+  html.push(`<h2 style="margin:0 0 .5rem">${esc(title)}</h2>`);
   if (top.length === 0) {
-    lines.push("No meaningful competitor changes this week.");
-    html.push("<p>No meaningful competitor changes this week.</p>");
+    lines.push(t("digest.none"));
+    html.push(`<p>${esc(t("digest.none"))}</p>`);
   } else {
-    lines.push(`${insights.length} meaningful change${insights.length === 1 ? "" : "s"} detected. Top items:`, "");
-    html.push(`<p>${insights.length} meaningful change${insights.length === 1 ? "" : "s"} detected. Top items:</p>`);
+    lines.push(t("digest.count", { n: insights.length }), "");
+    html.push(`<p>${esc(t("digest.count", { n: insights.length }))}</p>`);
     for (const i of top) {
       const who = competitorNames[i.competitor_id] ?? "Competitor";
-      lines.push(`[${i.category.toUpperCase()} ${i.importance}/5] ${i.headline}`, `  ${i.summary}`, `  Why it matters: ${i.why_it_matters}`, `  ${publicUrl}/insights/${i.id}`, "");
+      lines.push(`[${i.category.toUpperCase()} ${i.importance}/5] ${i.headline}`, `  ${i.summary}`, `  ${t("digest.why")} ${i.why_it_matters}`, `  ${publicUrl}/insights/${i.id}`, "");
       html.push(
         `<div style="border:1px solid #e3e3df;border-radius:8px;padding:.8rem;margin:.6rem 0">
-           <div style="font-size:.8em;color:#666">${esc(who)} · ${esc(i.category)} · importance ${i.importance}/5</div>
+           <div style="font-size:.8em;color:#666">${esc(who)} · ${esc(i.category)} · ${esc(t("ins.importance", { n: i.importance }))}</div>
            <p style="margin:.3rem 0"><a href="${publicUrl}/insights/${i.id}"><strong>${esc(i.headline)}</strong></a></p>
            <p style="margin:.3rem 0">${esc(i.summary)}</p>
-           <p style="margin:.3rem 0;color:#444"><strong>Why it matters:</strong> ${esc(i.why_it_matters)}</p>
+           <p style="margin:.3rem 0;color:#444"><strong>${esc(t("digest.why"))}</strong> ${esc(i.why_it_matters)}</p>
          </div>`,
       );
     }
   }
   const unhealthy = pageHealth.filter((p) => p.status !== "ACTIVE");
   if (unhealthy.length) {
-    lines.push("Monitoring problems (we are NOT receiving updates from these pages):");
-    html.push(`<h3 style="margin:1rem 0 .3rem">Monitoring problems</h3><p style="color:#b45309">We are not currently receiving updates from these pages:</p><ul>`);
+    lines.push(`${t("digest.problems")}: ${t("digest.problems.p")}`);
+    html.push(`<h3 style="margin:1rem 0 .3rem">${esc(t("digest.problems"))}</h3><p style="color:#b45309">${esc(t("digest.problems.p"))}</p><ul>`);
     for (const p of unhealthy) {
       lines.push(`  ${p.status}: ${p.url}`);
       html.push(`<li><code>${esc(p.status)}</code> ${esc(p.url)}</li>`);
@@ -58,10 +60,10 @@ export function buildDigest(business: Business, insights: Insight[], competitorN
     html.push("</ul>");
     lines.push("");
   }
-  lines.push(`Manage: ${publicUrl}/b/${business.id}`);
-  html.push(`<p style="font-size:.85em;color:#666"><a href="${publicUrl}/b/${business.id}">Open RivalWatch</a></p>`);
+  lines.push(`${t("digest.manage")}: ${publicUrl}/b/${business.id}`);
+  html.push(`<p style="font-size:.85em;color:#666"><a href="${publicUrl}/b/${business.id}">${esc(t("digest.manage"))}</a></p>`);
   return {
-    subject: top.length ? `RivalWatch weekly: ${insights.length} competitor change${insights.length === 1 ? "" : "s"} for ${business.name}` : `RivalWatch weekly: all quiet for ${business.name}`,
+    subject: top.length ? t("digest.subject.some", { n: insights.length, business: business.name }) : t("digest.subject.quiet", { business: business.name }),
     text: lines.join("\n"),
     html: `<div style="font:15px/1.5 system-ui,sans-serif;max-width:640px">${html.join("")}</div>`,
     insightCount: insights.length,
@@ -113,9 +115,12 @@ export class DigestJob {
       return { sent: false, insightCount: 0, recipients: 0 };
     }
 
-    const digest = buildDigest(business, insights, names, this.cfg.publicUrl, pageHealth);
     let ok = 0;
+    let insightCount = 0;
     for (const u of users) {
+      // Each recipient gets the digest in their own language.
+      const digest = buildDigest(business, insights, names, this.cfg.publicUrl, pageHealth, translator(isLocale(u.locale) ? u.locale : "en"));
+      insightCount = digest.insightCount;
       const r = await this.mailer.send({ to: u.email, subject: digest.subject, text: digest.text, html: digest.html, kind: "weekly_digest", accountId: business.account_id }, actor);
       if (r.ok) ok++;
     }
@@ -125,10 +130,10 @@ export class DigestJob {
       accountId: business.account_id,
       entity: { type: "business", id: business.id },
       result: ok > 0 ? "ok" : "failed",
-      payload: { insights: digest.insightCount, recipients: users.length, delivered: ok, provider: this.mailer.providerName },
+      payload: { insights: insightCount, recipients: users.length, delivered: ok, provider: this.mailer.providerName },
     });
     if (reschedule) this.repo.setDigestSchedule(business.id, next, ok > 0);
-    return { sent: ok > 0, insightCount: digest.insightCount, recipients: ok };
+    return { sent: ok > 0, insightCount, recipients: ok };
   }
 }
 

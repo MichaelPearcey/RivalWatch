@@ -2,6 +2,7 @@ import { gzipSync } from "node:zlib";
 import type { Analyzer } from "../ai/types.js";
 import type { Change, Insight, MonitoredPage, PageStatus, Repo } from "../db/repo.js";
 import type { Events } from "../events.js";
+import { LANGUAGE_NAMES, isLocale, type Locale } from "../i18n/index.js";
 import { errorFields, log } from "../logger.js";
 import type { FetchFailureReason, SourceRegistry } from "../sources/types.js";
 import { DEFAULT_THRESHOLD, detectChange, hashText } from "./detect.js";
@@ -209,7 +210,9 @@ export class Pipeline {
     if (!ctx) return null;
     const { page, competitor, business } = ctx;
     try {
+      const ownerLocale = this.repo.listUsers(business.account_id).find((u) => u.role === "owner")?.locale ?? this.repo.listUsers(business.account_id)[0]?.locale;
       const result = await this.analyzer.analyze({
+        language: LANGUAGE_NAMES[(isLocale(ownerLocale) ? ownerLocale : "en") as Locale],
         business: { name: business.name, description: business.description, pricing_notes: business.pricing_notes },
         competitor: { name: competitor.name, website: competitor.website },
         page: { url: page.url, kind: page.kind, title: pageTitle },

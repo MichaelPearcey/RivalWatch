@@ -3,6 +3,8 @@ import type { InsightCategory, PageKind } from "../db/repo.js";
 import type { Signal } from "../monitor/detect.js";
 
 export interface AnalysisInput {
+  /** Language the insight should be written in, e.g. "English", "Ukrainian". Defaults to English. */
+  language?: string;
   business: { name: string; description: string | null; pricing_notes: string | null };
   competitor: { name: string; website: string };
   page: { url: string; kind: PageKind; title: string | null };

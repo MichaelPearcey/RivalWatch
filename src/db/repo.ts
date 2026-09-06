@@ -30,6 +30,7 @@ export interface User {
   password_set_at: string | null;
   failed_logins: number;
   locked_until: string | null;
+  locale: string | null;
 }
 
 export interface Consent {
@@ -236,6 +237,9 @@ export class Repo {
   /** Admin is granted (never silently revoked) here; revocation is an explicit operator action. */
   touchUserLogin(id: number, grantAdmin: boolean): void {
     this.db.prepare(`UPDATE users SET last_login_at = ${NOW}, is_admin = CASE WHEN ? THEN 1 ELSE is_admin END, failed_logins = 0, locked_until = NULL WHERE id = ?`).run(grantAdmin ? 1 : 0, id);
+  }
+  setUserLocale(id: number, locale: string): void {
+    this.db.prepare("UPDATE users SET locale = ? WHERE id = ?").run(locale, id);
   }
   setUserPassword(id: number, hash: string | null): void {
     this.db.prepare(`UPDATE users SET password_hash = ?, password_set_at = CASE WHEN ? IS NULL THEN NULL ELSE ${NOW} END WHERE id = ?`).run(hash, hash, id);

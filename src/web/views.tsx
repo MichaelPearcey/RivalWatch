@@ -5,22 +5,25 @@ import type { Approval } from "../approvals.js";
 import type { Principal } from "../auth.js";
 import type { Account, ApiKey, Business, Change, Competitor, EmailRow, Insight, InsightFeedback, MonitoredPage, PageSuggestion, Snapshot, User } from "../db/repo.js";
 import type { EventRow } from "../events.js";
+import { LOCALES, translator, type Locale, type Translate } from "../i18n/index.js";
 import { COMPANY, LEGAL_VERSION } from "../legal.js";
 import { PLANS, getPlan } from "../plans.js";
 import { renderMarkdown } from "./md.js";
 import { CSS, JS } from "./theme.js";
 
+const EN = translator("en");
+
 // ---------------------------------------------------------------------------
 // Shell
 // ---------------------------------------------------------------------------
 
-export const Layout: FC<{ title: string; children?: unknown; flash?: string | undefined; principal?: Principal | undefined; description?: string; wide?: boolean }> = ({ title, children, flash, principal, description, wide }) => (
-  <html lang="en-GB">
+export const Layout: FC<{ title: string; children?: unknown; flash?: string | undefined; principal?: Principal | undefined; description?: string; t?: Translate }> = ({ title, children, flash, principal, description, t = EN }) => (
+  <html lang={t.locale}>
     <head>
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <title>{title} · RivalWatch</title>
-      <meta name="description" content={description ?? "RivalWatch watches your competitors' websites and tells you, in plain English, when something happens that actually matters."} />
+      <meta name="description" content={description ?? t("meta.description")} />
       <meta name="color-scheme" content="dark light" />
       <style>{raw(CSS)}</style>
       <script>{raw(THEME_BOOT)}</script>
@@ -39,43 +42,44 @@ export const Layout: FC<{ title: string; children?: unknown; flash?: string | un
           </a>
           {principal ? (
             <>
-              <a class="link" href="/">Dashboard</a>
-              <a class="link hide-sm" href="/settings">Settings</a>
-              {principal.isAdmin ? <a class="link" href="/admin">Admin</a> : null}
+              <a class="link" href="/">{t("nav.dashboard")}</a>
+              <a class="link hide-sm" href="/settings">{t("nav.settings")}</a>
+              {principal.isAdmin ? <a class="link" href="/admin">{t("nav.admin")}</a> : null}
             </>
           ) : (
             <>
-              <a class="link hide-sm" href="/#how">How it works</a>
-              <a class="link" href="/pricing">Pricing</a>
+              <a class="link hide-sm" href="/#how">{t("nav.how")}</a>
+              <a class="link" href="/pricing">{t("nav.pricing")}</a>
             </>
           )}
           <span class="right">
-            <ThemeToggle />
+            <LangPicker t={t} />
+            <ThemeToggle t={t} />
             {principal ? (
               <>
                 <span class="muted small hide-sm">{principal.user.email}</span>
                 <form method="post" action="/auth/logout" style="display:inline">
                   <button class="tiny secondary" type="submit">
-                    Sign out
+                    {t("nav.signout")}
                   </button>
                 </form>
               </>
             ) : (
               <>
-                <a class="link" href="/login">Sign in</a>
+                <a class="link" href="/login">{t("nav.signin")}</a>
                 <a class="btn tiny" href="/login?mode=signup" style="padding:.45rem .9rem;font-size:.85rem">
-                  Start free
+                  {t("nav.start")}
                 </a>
               </>
             )}
           </span>
         </div>
       </nav>
-      <main class={`wrap${wide ? "" : ""}`}>
+      <main class="wrap">
         {flash ? <div class="card info">{flash}</div> : null}
         {children}
       </main>
-      <Footer />
+      <Footer t={t} />
       <script>{raw(JS)}</script>
     </body>
   </html>
@@ -83,8 +87,8 @@ export const Layout: FC<{ title: string; children?: unknown; flash?: string | un
 
 const THEME_BOOT = `try{if(localStorage.getItem('rw-theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}`;
 
-const ThemeToggle: FC = () => (
-  <button type="button" class="theme" onclick="rwToggleTheme()" aria-label="Toggle light/dark theme" title="Toggle theme">
+const ThemeToggle: FC<{ t: Translate }> = ({ t }) => (
+  <button type="button" class="theme" onclick="rwToggleTheme()" aria-label={t("nav.theme")} title={t("nav.theme")}>
     <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
       <circle cx="12" cy="12" r="4" />
       <path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4 1.4-1.4" />
@@ -95,49 +99,67 @@ const ThemeToggle: FC = () => (
   </button>
 );
 
+/** Plain GET form so it works without JS; the server sets the cookie and redirects back. */
+const LangPicker: FC<{ t: Translate }> = ({ t }) => (
+  <form method="get" action="/lang" class="lang" style="display:inline">
+    <select name="lang" aria-label={t("nav.language")} onchange="this.form.submit()" class="theme" style="width:auto;padding:0 .5rem;font-size:.8rem">
+      {LOCALES.map((l) => (
+        <option value={l} selected={l === t.locale}>
+          {translator(l)("lang.name")}
+        </option>
+      ))}
+    </select>
+    <noscript>
+      <button class="tiny secondary" type="submit">
+        OK
+      </button>
+    </noscript>
+  </form>
+);
+
+const Footer: FC<{ t: Translate }> = ({ t }) => (
+  <footer class="footer">
+    <div class="footer-in">
+      <span>© {new Date().getFullYear()} RivalWatch</span>
+      <a href="/pricing">{t("nav.pricing")}</a>
+      <a href="/privacy">{t("footer.privacy")}</a>
+      <a href="/terms">{t("footer.terms")}</a>
+      <a href="/bot">{t("footer.bot")}</a>
+      <a href={`mailto:${COMPANY.contact}`}>{t("footer.contact")}</a>
+      <span class="ml tiny">{t("footer.tag")}</span>
+    </div>
+  </footer>
+);
+
 const Icon: FC<{ d: string }> = ({ d }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <path d={d} />
   </svg>
 );
 
-const Footer: FC = () => (
-  <footer class="footer">
-    <div class="footer-in">
-      <span>© {new Date().getFullYear()} RivalWatch</span>
-      <a href="/pricing">Pricing</a>
-      <a href="/privacy">Privacy</a>
-      <a href="/terms">Terms</a>
-      <a href="/bot">Our crawler</a>
-      <a href={`mailto:${COMPANY.contact}`}>Contact</a>
-      <span class="ml tiny">Made in the UK. No tracking cookies.</span>
-    </div>
-  </footer>
-);
-
 const fmtDate = (iso: string | null | undefined) => (iso ? iso.replace("T", " ").slice(0, 16) + " UTC" : "—");
 const fmtUsd = (n: number | null | undefined) => (n == null ? "—" : `$${n.toFixed(4)}`);
-const gbp = (pence: number) => (pence === 0 ? "Free" : `£${(pence / 100).toFixed(2)}`);
+const gbp = (pence: number, t: Translate) => (pence === 0 ? t("pricing.free") : `£${(pence / 100).toFixed(2)}`);
 
 // ---------------------------------------------------------------------------
 // Public pages
 // ---------------------------------------------------------------------------
 
-const ExampleInsight: FC = () => (
+const ExampleInsight: FC<{ t: Translate }> = ({ t }) => (
   <div class="card insight" style="margin:0">
     <div class="row small">
-      <span class="badge cat imp-4">pricing</span>
-      <span class="badge">importance 4/5</span>
-      <span class="badge ok">confirmed</span>
-      <span class="muted">Acme Studio · /pricing · 2 h ago</span>
+      <span class="badge cat imp-4">{t("kind.pricing")}</span>
+      <span class="badge">{t("ins.importance", { n: 4 })}</span>
+      <span class="badge ok">{t("ins.confirmed")}</span>
+      <span class="muted">{t("example.meta")}</span>
     </div>
-    <h3>Acme Studio raised its Professional plan from £49 to £59/month and added a £399/year option</h3>
-    <p class="small">Their main monthly tier went up 20%. The new annual plan works out at about £33/month for customers who commit for a year.</p>
+    <h3>{t("example.headline")}</h3>
+    <p class="small">{t("example.summary")}</p>
     <div class="why small">
-      <strong>Why this matters to you:</strong> your Studio tier (£55/month) is now cheaper than their monthly price — usable in positioning. But their annual option undercuts you for committed buyers; worth deciding whether to offer one.
+      <strong>{t("ins.why")}</strong> {t("example.why")}
     </div>
     <div class="row small" style="margin-top:.6rem;gap:.4rem">
-      <span class="muted">Evidence:</span>
+      <span class="muted">{t("example.evidence")}</span>
       <code style="color:var(--bad)">- £49/month</code>
       <code style="color:var(--ok)">+ £59/month</code>
       <code style="color:var(--ok)">+ £399/year</code>
@@ -154,22 +176,22 @@ const ICONS = {
   lock: "M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5V11zm7 4v3",
 };
 
-export const LandingPage: FC = () => (
-  <Layout title="Know when your competitors move" description="AI-filtered competitor monitoring for small businesses. We watch their pricing, products and announcements and tell you only what matters.">
+export const LandingPage: FC<{ t: Translate }> = ({ t }) => (
+  <Layout title={t("hero.h1a") + " " + t("hero.h1b")} t={t}>
     <section class="hero">
       <span class="eyebrow">
-        <span class="dot"></span> Continuous competitor intelligence
+        <span class="dot"></span> {t("hero.eyebrow")}
       </span>
       <h1>
-        Know the moment your <span class="gradient">competitors move.</span>
+        {t("hero.h1a")} <span class="gradient">{t("hero.h1b")}</span>
       </h1>
-      <p class="lead">RivalWatch watches your competitors' pricing, product and announcement pages around the clock, filters out the noise, and tells you in plain English what changed and why it matters to your business.</p>
+      <p class="lead">{t("hero.lead")}</p>
       <div class="row" style="justify-content:center">
         <a class="btn big" href="/login?mode=signup">
-          Start free — no card
+          {t("hero.cta")}
         </a>
         <a class="btn big secondary" href="#how">
-          See how it works
+          {t("hero.how")}
         </a>
       </div>
       <div class="mock reveal">
@@ -177,67 +199,58 @@ export const LandingPage: FC = () => (
           <i></i>
           <i></i>
           <i></i>
-          <span class="url">app.rivalwatch — Bright Pixel Design · Insights</span>
+          <span class="url">{t("hero.mock.url")}</span>
         </div>
         <div class="body">
-          <ExampleInsight />
+          <ExampleInsight t={t} />
         </div>
       </div>
       <div class="stats reveal">
         <div>
-          <b>every change</b>confirmed on a second visit
+          <b>{t("stats.confirm.b")}</b>
+          {t("stats.confirm")}
         </div>
         <div>
-          <b>0</b>tracking cookies
+          <b>{t("stats.cookies.b")}</b>
+          {t("stats.cookies")}
         </div>
         <div>
-          <b>&lt; 2 min</b>your Monday digest
+          <b>{t("stats.digest.b")}</b>
+          {t("stats.digest")}
         </div>
         <div>
-          <b>100%</b>evidence-linked
+          <b>{t("stats.evidence.b")}</b>
+          {t("stats.evidence")}
         </div>
       </div>
     </section>
 
     <section id="how" class="block">
       <div class="center reveal">
-        <span class="eyebrow">How it works</span>
-        <h2 style="font-size:2rem;margin-top:0">From "they changed something" to "here's what to do"</h2>
+        <span class="eyebrow">{t("how.eyebrow")}</span>
+        <h2 style="font-size:2rem;margin-top:0">{t("how.h2")}</h2>
       </div>
       <div class="grid g3 steps">
-        <div class="card step reveal">
-          <h3>Tell us about you and them</h3>
-          <p class="muted">Describe your business and your prices, then add competitor websites. We find their pricing, product and news pages and you confirm which to watch.</p>
-        </div>
-        <div class="card step reveal">
-          <h3>We watch, politely and precisely</h3>
-          <p class="muted">A well-behaved crawler checks the pages on a schedule, obeys every site's rules, and re-verifies each change on a second visit so A/B tests and glitches never reach you.</p>
-        </div>
-        <div class="card step reveal">
-          <h3>You get only what matters</h3>
-          <p class="muted">An AI analyst reads each confirmed change against <em>your</em> pricing and positioning and writes a short note: what changed, why it matters to you, what to consider.</p>
-        </div>
+        {([1, 2, 3] as const).map((n) => (
+          <div class="card step reveal">
+            <h3>{t(`how.${n}.h`)}</h3>
+            <p class="muted">{t(`how.${n}.p`)}</p>
+          </div>
+        ))}
       </div>
     </section>
 
     <section class="block">
       <div class="center reveal">
-        <span class="eyebrow">Built differently</span>
-        <h2 style="font-size:2rem;margin-top:0">Not another "page changed" alert</h2>
+        <span class="eyebrow">{t("diff.eyebrow")}</span>
+        <h2 style="font-size:2rem;margin-top:0">{t("diff.h2")}</h2>
       </div>
       <div class="grid g3">
-        {[
-          [ICONS.filter, "Signal, not noise", "Rotating testimonials, dates, cookie banners and counters are stripped before anything reaches you. Two-visit confirmation kills false positives."],
-          [ICONS.brain, "Analysis relative to you", "Insights are written against your own pricing and positioning — \"their annual plan now undercuts your Studio tier\" — not generic summaries."],
-          [ICONS.eye, "Evidence on every insight", "Each card links to the exact before/after text we saw, so you can verify in seconds and correct us when we're wrong."],
-          [ICONS.radar, "Honest about coverage", "If a site blocks automated access or can't be read, your dashboard says so. A broken monitor is never shown as healthy."],
-          [ICONS.shield, "Private by design", "UK-based and GDPR-aligned. One necessary cookie, no trackers, no third-party scripts. Export or delete everything from Settings."],
-          [ICONS.lock, "Under human control", "The AI that runs our operations can only recommend and request; a person approves anything consequential. Every action is audited."],
-        ].map(([d, title, body]) => (
+        {(["filter", "brain", "eye", "radar", "shield", "lock"] as const).map((k) => (
           <div class="card feature reveal">
-            <Icon d={d!} />
-            <h3>{title}</h3>
-            <p class="muted small">{body}</p>
+            <Icon d={ICONS[k]} />
+            <h3>{t(`f.${k}.h`)}</h3>
+            <p class="muted small">{t(`f.${k}.p`)}</p>
           </div>
         ))}
       </div>
@@ -245,120 +258,117 @@ export const LandingPage: FC = () => (
 
     <section class="block">
       <div class="cta reveal">
-        <h2 style="font-size:2rem;margin-top:0">Start watching today</h2>
-        <p class="muted">Two competitors free, forever. Upgrade when you need more.</p>
+        <h2 style="font-size:2rem;margin-top:0">{t("cta.h2")}</h2>
+        <p class="muted">{t("cta.p")}</p>
         <a class="btn big" href="/login?mode=signup">
-          Create your free account
+          {t("cta.btn")}
         </a>
         <p class="muted tiny" style="margin-top:1rem">
-          No card needed · cancel any time · <a href="/privacy">privacy policy</a>
+          {t("cta.fine")} · <a href="/privacy">{t("footer.privacy")}</a>
         </p>
       </div>
     </section>
   </Layout>
 );
 
-export const PricingPage: FC<{ principal?: Principal | undefined }> = ({ principal }) => (
-  <Layout title="Pricing" principal={principal} description="Simple pricing for competitor monitoring: free for 2 competitors, £9.99/month for 10, £19.99/month for 25.">
+export const PricingPage: FC<{ principal?: Principal | undefined; t: Translate }> = ({ principal, t }) => (
+  <Layout title={t("nav.pricing")} principal={principal} t={t}>
     <section class="center" style="padding:3rem 0 2rem">
-      <span class="eyebrow">Pricing</span>
+      <span class="eyebrow">{t("pricing.eyebrow")}</span>
       <h1 style="font-size:clamp(2rem,5vw,3.2rem);letter-spacing:-.03em">
-        Simple, <span class="gradient">honest</span> pricing
+        {t("pricing.h1a")} <span class="gradient">{t("pricing.h1b")}</span> {t("pricing.h1c")}
       </h1>
-      <p class="muted" style="font-size:1.1rem">Prices in GBP, VAT included where applicable. Monthly, cancel any time.</p>
+      <p class="muted" style="font-size:1.1rem">{t("pricing.lead")}</p>
     </section>
     <div class="grid g3">
       {Object.values(PLANS).map((p) => (
         <div class={`card plan${p.id === "pro" ? " featured" : ""}`}>
-          {p.id === "pro" ? <span class="badge brand">Most popular</span> : null}
+          {p.id === "pro" ? <span class="badge brand">{t("pricing.popular")}</span> : null}
           <h3 style="margin-top:.5rem">{p.name}</h3>
           <div class="price">
-            {gbp(p.price_pence_monthly)}
-            {p.price_pence_monthly ? <small>/month</small> : null}
+            {gbp(p.price_pence_monthly, t)}
+            {p.price_pence_monthly ? <small>{t("pricing.month")}</small> : null}
           </div>
           <ul class="tick">
-            <li>
-              Up to <strong>{p.max_competitors}</strong> competitor{p.max_competitors === 1 ? "" : "s"}
-            </li>
-            <li>{p.max_pages_per_competitor} pages per competitor</li>
-            <li>Checked every {p.check_interval_minutes >= 1440 ? `${p.check_interval_minutes / 1440} day${p.check_interval_minutes / 1440 === 1 ? "" : "s"}` : `${p.check_interval_minutes / 60} hours`}</li>
-            <li>AI analysis of every confirmed change</li>
-            <li>Weekly email digest</li>
-            {p.features.alerts ? <li>Instant alerts for important changes</li> : null}
-            {p.features.history_trends ? <li>Historical trends</li> : null}
-            {p.features.comparisons ? <li>You-vs-them comparisons</li> : null}
-            {p.features.monthly_strategic_analysis ? <li>Monthly strategic analysis</li> : null}
+            <li>{t("pricing.competitors", { n: p.max_competitors })}</li>
+            <li>{t("pricing.pages", { n: p.max_pages_per_competitor })}</li>
+            <li>{p.check_interval_minutes >= 1440 ? t("pricing.every.days", { n: p.check_interval_minutes / 1440 }) : t("pricing.every.hours", { n: p.check_interval_minutes / 60 })}</li>
+            <li>{t("pricing.ai")}</li>
+            <li>{t("pricing.digest")}</li>
+            {p.features.alerts ? <li>{t("pricing.alerts")}</li> : null}
+            {p.features.history_trends ? <li>{t("pricing.trends")}</li> : null}
+            {p.features.comparisons ? <li>{t("pricing.compare")}</li> : null}
+            {p.features.monthly_strategic_analysis ? <li>{t("pricing.strategic")}</li> : null}
           </ul>
           <a class={`btn${p.id === "pro" ? "" : " secondary"}`} href="/login?mode=signup" style="width:100%;justify-content:center">
-            {p.price_pence_monthly ? `Start with ${p.name}` : "Start free"}
+            {p.price_pence_monthly ? t("pricing.start", { plan: p.name }) : t("pricing.startfree")}
           </a>
         </div>
       ))}
     </div>
     <p class="muted small center" style="margin-top:1.5rem">
-      Paid plans are in early access: create a free account and we'll upgrade you on request while billing is being finalised. Questions? <a href={`mailto:${COMPANY.contact}`}>{COMPANY.contact}</a>
+      {t("pricing.note")} <a href={`mailto:${COMPANY.contact}`}>{COMPANY.contact}</a>
     </p>
   </Layout>
 );
 
-export const LegalPage: FC<{ title: string; markdown: string; principal?: Principal | undefined }> = ({ title, markdown, principal }) => (
-  <Layout title={title} principal={principal}>
+export const LegalPage: FC<{ title: string; markdown: string; principal?: Principal | undefined; t: Translate }> = ({ title, markdown, principal, t }) => (
+  <Layout title={title} principal={principal} t={t}>
+    {t.locale !== "en" ? <p class="muted small center">{t("consent.english")}</p> : null}
     <article class="card prose narrow" style="margin:0 auto">
       {raw(renderMarkdown(markdown))}
     </article>
   </Layout>
 );
 
-export const LoginPage: FC<{ mode?: "signin" | "signup"; sent?: boolean; devLink?: string | undefined; error?: string | undefined; email?: string | undefined; next?: string | undefined }> = ({ mode = "signin", sent, devLink, error, email, next }) => (
-  <Layout title={mode === "signup" ? "Create your account" : "Sign in"}>
+export const LoginPage: FC<{ t: Translate; mode?: "signin" | "signup"; sent?: boolean; devLink?: string | undefined; error?: string | undefined; email?: string | undefined; next?: string | undefined }> = ({ t, mode = "signin", sent, devLink, error, email, next }) => (
+  <Layout title={mode === "signup" ? t("signup.title") : t("login.title")} t={t}>
     <div class="narrow" style="margin:2rem auto">
-      <h1 class="center">{mode === "signup" ? "Create your free account" : "Sign in"}</h1>
+      <h1 class="center">{mode === "signup" ? t("signup.title") : t("login.title")}</h1>
       {error ? <div class="card alert">{error}</div> : null}
       {sent ? (
         <div class="card good">
-          <p>
-            If <strong>{email}</strong> is valid, a sign-in link is on its way. It expires in a few minutes and works once.
-          </p>
-          <p class="muted small">Not there after a minute? Check your spam folder and mark it "not spam" so future emails arrive in your inbox.</p>
+          <p>{t("login.sent", { email: email ?? "" })}</p>
+          <p class="muted small">{t("login.spam")}</p>
           {devLink ? (
             <p class="muted small">
-              Development mode: <a href={devLink}>open the sign-in link</a>
+              {t("login.dev")} <a href={devLink}>{t("login.devlink")}</a>
             </p>
           ) : null}
         </div>
       ) : (
         <div class="grid g2">
           <form method="post" action="/auth/login" class="card">
-            <h3 style="margin-top:0">{mode === "signup" ? "Sign up with your email" : "Email me a sign-in link"}</h3>
-            <p class="muted small">No password to remember. We email you a one-time link.</p>
+            <h3 style="margin-top:0">{mode === "signup" ? t("signup.link.h") : t("login.link.h")}</h3>
+            <p class="muted small">{t("login.link.p")}</p>
             <input type="hidden" name="next" value={next ?? ""} />
             <label>
-              Email <input name="email" type="email" required autocomplete="email" value={email ?? ""} />
+              {t("login.email")} <input name="email" type="email" required autocomplete="email" value={email ?? ""} />
             </label>
             <p>
               <button type="submit" style="width:100%;justify-content:center">
-                {mode === "signup" ? "Create account" : "Send link"}
+                {mode === "signup" ? t("signup.create") : t("login.send")}
               </button>
             </p>
             {mode === "signup" ? (
               <p class="tiny muted">
-                By continuing you'll be asked to accept our <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.
+                {t("signup.agree")} <a href="/terms">{t("consent.terms.link")}</a> {t("login.and")} <a href="/privacy">{t("consent.privacy.link")}</a>.
               </p>
             ) : null}
           </form>
           <form method="post" action="/auth/password" class="card">
-            <h3 style="margin-top:0">Sign in with a password</h3>
-            <p class="muted small">If you've set one in Settings. Forgotten it? Use the email link instead.</p>
+            <h3 style="margin-top:0">{t("login.pw.h")}</h3>
+            <p class="muted small">{t("login.pw.p")}</p>
             <input type="hidden" name="next" value={next ?? ""} />
             <label>
-              Email <input name="email" type="email" required autocomplete="username" />
+              {t("login.email")} <input name="email" type="email" required autocomplete="username" />
             </label>
             <label>
-              Password <input name="password" type="password" required autocomplete="current-password" minlength={1} />
+              {t("login.password")} <input name="password" type="password" required autocomplete="current-password" minlength={1} />
             </label>
             <p>
               <button type="submit" class="secondary" style="width:100%;justify-content:center">
-                Sign in
+                {t("login.pw.btn")}
               </button>
             </p>
           </form>
@@ -367,11 +377,11 @@ export const LoginPage: FC<{ mode?: "signin" | "signup"; sent?: boolean; devLink
       <p class="center muted small">
         {mode === "signup" ? (
           <>
-            Already have an account? <a href="/login">Sign in</a>
+            {t("login.have")} <a href="/login">{t("login.title")}</a>
           </>
         ) : (
           <>
-            New here? <a href="/login?mode=signup">Create a free account</a>
+            {t("login.new")} <a href="/login?mode=signup">{t("login.newlink")}</a>
           </>
         )}
       </p>
@@ -379,32 +389,39 @@ export const LoginPage: FC<{ mode?: "signin" | "signup"; sent?: boolean; devLink
   </Layout>
 );
 
-export const ConsentPage: FC<{ principal: Principal; next?: string | undefined; error?: string | undefined; firstTime: boolean }> = ({ principal, next, error, firstTime }) => (
-  <Layout title="Terms and privacy" principal={principal}>
+export const ConsentPage: FC<{ principal: Principal; t: Translate; next?: string | undefined; error?: string | undefined; firstTime: boolean }> = ({ principal, t, next, error, firstTime }) => (
+  <Layout title={t("consent.terms.link")} principal={principal} t={t}>
     <div class="narrow" style="margin:2rem auto">
-      <h1>{firstTime ? "One last thing" : "We've updated our terms"}</h1>
-      <p class="muted">
-        {firstTime ? "Before you start, please read and accept how the service works and how we look after your data." : `Version ${LEGAL_VERSION} of our Terms and Privacy Policy is now in force. Please review and accept to continue.`}
-      </p>
+      <h1>{firstTime ? t("consent.first.h") : t("consent.update.h")}</h1>
+      <p class="muted">{firstTime ? t("consent.first.p") : t("consent.update.p", { version: LEGAL_VERSION })}</p>
+      {t.locale !== "en" ? <p class="muted small">{t("consent.english")}</p> : null}
       {error ? <div class="card alert">{error}</div> : null}
       <form method="post" action="/legal/accept" class="card">
         <input type="hidden" name="next" value={next ?? "/"} />
         <label class="check">
           <input type="checkbox" name="terms" value="1" required />
           <span>
-            I have read and accept the <a href="/terms" target="_blank" rel="noopener">Terms of Service</a>.
+            {t("consent.terms")}{" "}
+            <a href="/terms" target="_blank" rel="noopener">
+              {t("consent.terms.link")}
+            </a>
+            .
           </span>
         </label>
         <label class="check">
           <input type="checkbox" name="privacy" value="1" required />
           <span>
-            I have read the <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> and understand how my data is used, including AI analysis of the competitor pages I choose to monitor.
+            {t("consent.privacy")}{" "}
+            <a href="/privacy" target="_blank" rel="noopener">
+              {t("consent.privacy.link")}
+            </a>{" "}
+            {t("consent.privacy.tail")}
           </span>
         </label>
         <p>
-          <button type="submit">Accept and continue</button>{" "}
+          <button type="submit">{t("consent.accept")}</button>{" "}
           <a class="btn secondary" href="/auth/logout-get">
-            Not now — sign out
+            {t("consent.later")}
           </a>
         </p>
       </form>
@@ -416,55 +433,55 @@ export const ConsentPage: FC<{ principal: Principal; next?: string | undefined; 
 // App pages
 // ---------------------------------------------------------------------------
 
-export const BusinessesPage: FC<{ principal: Principal; businesses: Business[]; account: Account; flash?: string | undefined }> = ({ principal, businesses, account, flash }) => (
-  <Layout title="Dashboard" principal={principal} flash={flash}>
+export const BusinessesPage: FC<{ principal: Principal; t: Translate; businesses: Business[]; account: Account; flash?: string | undefined }> = ({ principal, t, businesses, account, flash }) => (
+  <Layout title={t("dash.title")} principal={principal} flash={flash} t={t}>
     <div class="row">
-      <h1 style="margin:0">Your businesses</h1>
-      <span class="badge brand">{getPlan(account.plan).name} plan</span>
+      <h1 style="margin:0">{t("dash.h1")}</h1>
+      <span class="badge brand">{t("dash.plan", { plan: getPlan(account.plan).name })}</span>
     </div>
     {account.delete_after ? (
       <div class="card alert">
-        <strong>This account is scheduled for deletion</strong> on {fmtDate(account.delete_after)}. Monitoring is paused.{" "}
+        <strong>{t("dash.deleting", { date: fmtDate(account.delete_after) })}</strong>{" "}
         <form method="post" action="/settings/delete/cancel" style="display:inline">
           <button class="tiny secondary" type="submit">
-            Cancel deletion
+            {t("dash.cancel.deletion")}
           </button>
         </form>
       </div>
     ) : null}
     {businesses.length === 0 ? (
       <div class="card">
-        <h2 style="margin-top:0">Welcome — let's set you up</h2>
-        <p class="muted">Start by describing your own business. The AI uses this to explain why a competitor's change matters <em>to you</em>, so a sentence or two about what you sell and what you charge goes a long way.</p>
+        <h2 style="margin-top:0">{t("dash.welcome.h")}</h2>
+        <p class="muted">{t("dash.welcome.p")}</p>
       </div>
     ) : null}
     {businesses.map((b) => (
       <a href={`/b/${b.id}`} class="card row" style="display:flex;color:inherit;text-decoration:none">
         <strong>{b.name}</strong>
         <span class="muted small">{b.website ?? ""}</span>
-        <span class="ml muted small">Open →</span>
+        <span class="ml muted small">{t("dash.open")}</span>
       </a>
     ))}
-    <h2>{businesses.length ? "Add another business" : "Describe your business"}</h2>
+    <h2>{businesses.length ? t("dash.add.h") : t("dash.describe.h")}</h2>
     <form method="post" action="/b" class="card">
       <div class="grid g2">
         <label>
-          Business name <input name="name" required placeholder="e.g. Bright Pixel Design" />
+          {t("biz.name")} <input name="name" required placeholder="e.g. Bright Pixel Design" />
         </label>
         <label>
-          Website <input name="website" type="url" placeholder="https://" />
+          {t("biz.website")} <input name="website" type="url" placeholder="https://" />
         </label>
       </div>
       <label>
-        What do you do, and for whom?
-        <textarea name="description" placeholder="Freelance brand and web design for small UK businesses" />
+        {t("biz.desc")}
+        <textarea name="description" />
       </label>
       <label>
-        Your pricing (free text)
-        <textarea name="pricing_notes" placeholder="Starter £25/month, Studio £55/month. No annual plan." />
+        {t("biz.pricing")}
+        <textarea name="pricing_notes" placeholder="Starter £25/month, Studio £55/month" />
       </label>
       <p>
-        <button type="submit">Create business</button>
+        <button type="submit">{t("biz.create")}</button>
       </p>
     </form>
   </Layout>
@@ -478,6 +495,7 @@ export const StatusBadge: FC<{ page: MonitoredPage }> = ({ page }) => (
 
 export const BusinessPage: FC<{
   principal: Principal;
+  t: Translate;
   business: Business;
   account: Account;
   competitors: { competitor: Competitor; pages: MonitoredPage[]; suggestions: PageSuggestion[] }[];
@@ -486,59 +504,51 @@ export const BusinessPage: FC<{
   competitorNames: Record<number, string>;
   includeNoise: boolean;
   flash?: string | undefined;
-}> = ({ principal, business, account, competitors, insights, feedback, competitorNames, includeNoise, flash }) => {
+}> = ({ principal, t, business, account, competitors, insights, feedback, competitorNames, includeNoise, flash }) => {
   const plan = getPlan(account.plan);
   const unhealthy = competitors.flatMap((c) => c.pages).filter((p) => p.status !== "ACTIVE" && p.status !== "PAUSED");
   return (
-    <Layout title={business.name} principal={principal} flash={flash}>
+    <Layout title={business.name} principal={principal} flash={flash} t={t}>
       <div class="row">
         <div class="grow">
           <p class="muted small" style="margin:0">
-            <a href="/">Dashboard</a> / {business.name}
+            <a href="/">{t("nav.dashboard")}</a> / {business.name}
           </p>
           <h1 style="margin:0">{business.name}</h1>
           <p class="muted small" style="margin:.2rem 0 0">
-            {plan.name} plan · {competitors.length}/{plan.max_competitors} competitors · digest {business.digest_enabled ? `on, next ${fmtDate(business.next_digest_at)}` : "off"}
+            {t("biz.meta", { plan: plan.name, n: competitors.length, max: plan.max_competitors, digest: business.digest_enabled ? t("biz.digest.on", { date: fmtDate(business.next_digest_at) }) : t("biz.digest.off") })}
           </p>
         </div>
         <form method="post" action={`/b/${business.id}/scan`}>
           <button type="submit" class="secondary">
-            Check all now
+            {t("biz.checkall")}
           </button>
         </form>
       </div>
-      {unhealthy.length ? (
-        <div class="card alert">
-          <strong>Monitoring problem:</strong> {unhealthy.length} page{unhealthy.length === 1 ? " is" : "s are"} not being checked successfully. See the status column below — we never treat a broken monitor as healthy.
-        </div>
-      ) : null}
+      {unhealthy.length ? <div class="card alert">{t("biz.problem", { n: unhealthy.length })}</div> : null}
 
       <div class="row" style="margin-top:1.5rem">
-        <h2 style="margin:0">Insights</h2>
+        <h2 style="margin:0">{t("biz.insights")}</h2>
         <span class="ml small">
-          {includeNoise ? <a href={`/b/${business.id}`}>Hide filtered-out changes</a> : <a href={`/b/${business.id}?noise=1`}>Show filtered-out changes</a>}
+          {includeNoise ? <a href={`/b/${business.id}`}>{t("biz.hidenoise")}</a> : <a href={`/b/${business.id}?noise=1`}>{t("biz.shownoise")}</a>}
           {" · "}
           <form method="post" action={`/b/${business.id}/digest`} style="display:inline">
             <input type="hidden" name="enabled" value={business.digest_enabled ? "0" : "1"} />
             <button class="tiny secondary" type="submit">
-              digest {business.digest_enabled ? "off" : "on"}
+              {business.digest_enabled ? t("biz.digest.toggle.off") : t("biz.digest.toggle.on")}
             </button>
           </form>{" "}
           <form method="post" action={`/b/${business.id}/digest/send`} style="display:inline">
             <button class="tiny secondary" type="submit">
-              email me a digest now
+              {t("biz.digest.now")}
             </button>
           </form>
         </span>
       </div>
-      {insights.length === 0 ? (
-        <div class="card empty">
-          {competitors.length === 0 ? "Add a competitor below to start." : "Nothing yet. We take a baseline first, then confirm every change on a second visit before it appears here — so the first insights typically arrive within a day or two of a competitor actually changing something."}
-        </div>
-      ) : null}
-      {insights.map((i) => <InsightCard insight={i} competitorName={competitorNames[i.competitor_id] ?? "Competitor"} feedback={feedback[i.id] ?? []} />)}
+      {insights.length === 0 ? <div class="card empty">{competitors.length === 0 ? t("biz.empty.nocomp") : t("biz.empty")}</div> : null}
+      {insights.map((i) => <InsightCard t={t} insight={i} competitorName={competitorNames[i.competitor_id] ?? "Competitor"} feedback={feedback[i.id] ?? []} />)}
 
-      <h2>Competitors</h2>
+      <h2>{t("biz.competitors")}</h2>
       {competitors.map(({ competitor, pages, suggestions }) => (
         <div class="card">
           <div class="row">
@@ -549,22 +559,22 @@ export const BusinessPage: FC<{
             <span class="ml"></span>
             <form method="post" action={`/competitors/${competitor.id}/discover`} style="display:inline">
               <button class="secondary tiny" type="submit">
-                Find more pages
+                {t("comp.findmore")}
               </button>
             </form>
-            <form method="post" action={`/competitors/${competitor.id}/delete`} style="display:inline" onsubmit="return confirm('Remove this competitor and everything we collected about it?')">
+            <form method="post" action={`/competitors/${competitor.id}/delete`} style="display:inline" onsubmit={`return confirm(${JSON.stringify(t("comp.remove.confirm"))})`}>
               <button class="danger tiny" type="submit">
-                Remove
+                {t("comp.remove")}
               </button>
             </form>
           </div>
           <table style="margin-top:.75rem">
             <thead>
               <tr>
-                <th>Page</th>
-                <th>Type</th>
-                <th>Checked</th>
-                <th>Status</th>
+                <th>{t("page.col.page")}</th>
+                <th>{t("page.col.type")}</th>
+                <th>{t("page.col.checked")}</th>
+                <th>{t("page.col.status")}</th>
                 <th></th>
               </tr>
             </thead>
@@ -575,11 +585,11 @@ export const BusinessPage: FC<{
                     <a href={`/pages/${p.id}`}>{p.url.replace(/^https?:\/\//, "")}</a>
                     {p.status_message && p.status !== "ACTIVE" ? <div class="muted tiny">{p.status_message}</div> : null}
                   </td>
-                  <td>{p.kind}</td>
+                  <td>{t(`kind.${p.kind}`)}</td>
                   <td class="muted small">
-                    every {humanMinutes(p.check_interval_minutes)}
+                    {t("page.every", { interval: humanMinutes(p.check_interval_minutes) })}
                     <br />
-                    last {fmtDate(p.last_checked_at)}
+                    {t("page.last", { date: fmtDate(p.last_checked_at) })}
                   </td>
                   <td>
                     <StatusBadge page={p} />
@@ -587,16 +597,16 @@ export const BusinessPage: FC<{
                   <td style="white-space:nowrap;text-align:right">
                     <form method="post" action={`/pages/${p.id}/scan`} style="display:inline">
                       <button class="secondary tiny" type="submit" disabled={!p.enabled}>
-                        Check
+                        {t("page.check")}
                       </button>
                     </form>{" "}
                     <form method="post" action={`/pages/${p.id}/${p.enabled ? "pause" : "resume"}`} style="display:inline">
                       <button class="secondary tiny" type="submit">
-                        {p.enabled ? "Pause" : "Resume"}
+                        {p.enabled ? t("page.pause") : t("page.resume")}
                       </button>
                     </form>{" "}
                     <form method="post" action={`/pages/${p.id}/delete`} style="display:inline">
-                      <button class="danger tiny" type="submit" aria-label="Remove page">
+                      <button class="danger tiny" type="submit" aria-label={t("page.remove")}>
                         ×
                       </button>
                     </form>
@@ -607,25 +617,25 @@ export const BusinessPage: FC<{
           </table>
           {suggestions.length ? (
             <div class="card info flat" style="margin:.75rem 0 0">
-              <strong class="small">We found pages on their site worth monitoring — add the ones you care about:</strong>
+              <strong class="small">{t("sugg.h")}</strong>
               <table>
                 <tbody>
                   {suggestions.map((s) => (
                     <tr>
                       <td>{s.url.replace(/^https?:\/\//, "")}</td>
                       <td>
-                        <span class="badge">{s.kind}</span>
+                        <span class="badge">{t(`kind.${s.kind}`)}</span>
                       </td>
                       <td class="muted small">{s.reason}</td>
                       <td style="white-space:nowrap;text-align:right">
                         <form method="post" action={`/suggestions/${s.id}/accept`} style="display:inline">
                           <button class="tiny" type="submit">
-                            Monitor
+                            {t("sugg.monitor")}
                           </button>
                         </form>{" "}
                         <form method="post" action={`/suggestions/${s.id}/dismiss`} style="display:inline">
                           <button class="secondary tiny" type="submit">
-                            Dismiss
+                            {t("sugg.dismiss")}
                           </button>
                         </form>
                       </td>
@@ -637,55 +647,48 @@ export const BusinessPage: FC<{
           ) : null}
           <form method="post" action={`/competitors/${competitor.id}/pages`} class="inline" style="margin-top:.75rem">
             <label class="grow">
-              Add a page URL <input name="url" type="url" required placeholder="https://competitor.com/pricing" />
+              {t("page.add.url")} <input name="url" type="url" required placeholder="https://competitor.com/pricing" />
             </label>
             <label>
-              Type
+              {t("page.add.type")}
               <select name="kind">
-                <option value="pricing">pricing</option>
-                <option value="home">home</option>
-                <option value="products">products</option>
-                <option value="blog">blog / news</option>
-                <option value="other">other</option>
+                {(["pricing", "home", "products", "blog", "other"] as const).map((k) => (
+                  <option value={k}>{t(`kind.${k}`)}</option>
+                ))}
               </select>
             </label>
             <button class="secondary" type="submit">
-              Add page
+              {t("page.add")}
             </button>
           </form>
         </div>
       ))}
 
-      <h2>Add a competitor</h2>
+      <h2>{t("comp.add.h")}</h2>
       <form method="post" action={`/b/${business.id}/competitors`} class="card inline">
         <label>
-          Name <input name="name" required placeholder="Acme Studio" />
+          {t("comp.add.name")} <input name="name" required placeholder="Acme Studio" />
         </label>
         <label class="grow">
-          Website <input name="website" type="url" required placeholder="https://acme.example" />
+          {t("comp.add.website")} <input name="website" type="url" required placeholder="https://acme.example" />
         </label>
-        <button type="submit">Add competitor</button>
-        <p class="muted tiny" style="width:100%;margin:0">We monitor their home page straight away and suggest pricing, product and news pages for you to confirm.</p>
+        <button type="submit">{t("comp.add.btn")}</button>
+        <p class="muted tiny" style="width:100%;margin:0">{t("comp.add.note")}</p>
       </form>
     </Layout>
   );
 };
 
-const VERDICTS: { v: string; label: string }[] = [
-  { v: "useful", label: "Useful" },
-  { v: "not_useful", label: "Not useful" },
-  { v: "incorrect", label: "Incorrect" },
-  { v: "too_noisy", label: "Too noisy" },
-];
+const VERDICTS = ["useful", "not_useful", "incorrect", "too_noisy"] as const;
 
-export const InsightCard: FC<{ insight: Insight; competitorName: string; feedback: InsightFeedback[] }> = ({ insight, competitorName, feedback }) => {
+export const InsightCard: FC<{ t: Translate; insight: Insight; competitorName: string; feedback: InsightFeedback[] }> = ({ t, insight, competitorName, feedback }) => {
   const mine = feedback[0]?.verdict;
   return (
     <div class={`card insight${insight.matters ? "" : " filtered"}`}>
       <div class="row small">
         <span class={`badge cat imp-${insight.importance}`}>{insight.category}</span>
-        <span class="badge">importance {insight.importance}/5</span>
-        {insight.matters ? null : <span class="badge">filtered out</span>}
+        <span class="badge">{t("ins.importance", { n: insight.importance })}</span>
+        {insight.matters ? null : <span class="badge">{t("ins.filtered")}</span>}
         <span class="muted">
           {competitorName} · {fmtDate(insight.created_at)}
         </span>
@@ -697,15 +700,15 @@ export const InsightCard: FC<{ insight: Insight; competitorName: string; feedbac
       </h3>
       <p style="margin:.2rem 0">{insight.summary}</p>
       <div class="why small">
-        <strong>Why this matters to you:</strong> {insight.why_it_matters}
+        <strong>{t("ins.why")}</strong> {insight.why_it_matters}
       </div>
       <div class="fb small" style="margin-top:.6rem">
-        <span class="muted">Was this helpful?</span>
-        {VERDICTS.map(({ v, label }) => (
+        <span class="muted">{t("ins.helpful")}</span>
+        {VERDICTS.map((v) => (
           <form method="post" action={`/insights/${insight.id}/feedback`}>
             <input type="hidden" name="verdict" value={v} />
             <button class={`tiny secondary${mine === v ? " active" : ""}`} type="submit">
-              {label}
+              {t(`fb.${v}`)}
             </button>
           </form>
         ))}
@@ -714,8 +717,9 @@ export const InsightCard: FC<{ insight: Insight; competitorName: string; feedbac
   );
 };
 
-export const InsightDetailPage: FC<{ principal: Principal; insight: Insight; change: Change; page: MonitoredPage; competitor: Competitor; business: Business; feedback: InsightFeedback[] }> = ({
+export const InsightDetailPage: FC<{ principal: Principal; t: Translate; insight: Insight; change: Change; page: MonitoredPage; competitor: Competitor; business: Business; feedback: InsightFeedback[] }> = ({
   principal,
+  t,
   insight,
   change,
   page,
@@ -726,18 +730,18 @@ export const InsightDetailPage: FC<{ principal: Principal; insight: Insight; cha
   const added = JSON.parse(change.added_json) as string[];
   const removed = JSON.parse(change.removed_json) as string[];
   return (
-    <Layout title={insight.headline} principal={principal}>
+    <Layout title={insight.headline} principal={principal} t={t}>
       <p class="muted small">
-        <a href="/">Dashboard</a> / <a href={`/b/${business.id}`}>{business.name}</a> / insight
+        <a href="/">{t("nav.dashboard")}</a> / <a href={`/b/${business.id}`}>{business.name}</a>
       </p>
-      <InsightCard insight={insight} competitorName={competitor.name} feedback={feedback} />
-      <h2>Evidence</h2>
+      <InsightCard t={t} insight={insight} competitorName={competitor.name} feedback={feedback} />
+      <h2>{t("ins.evidence")}</h2>
       <p class="muted small">
         <a href={page.url} target="_blank" rel="noopener">
           {page.url}
         </a>{" "}
-        · detected {fmtDate(change.detected_at)} · confirmed {fmtDate(change.confirmed_at)} · significance {change.significance} · signals {JSON.parse(change.signals_json).join(", ") || "none"}
-        {principal.isAdmin ? ` · ${insight.provider}${insight.model ? ` (${insight.model})` : ""} · tokens ${insight.input_tokens ?? 0}/${insight.output_tokens ?? 0} · ${fmtUsd(insight.estimated_cost_usd)}` : ""}
+        · {t("ins.detected", { date: fmtDate(change.detected_at) })} · {t("ins.confirmedat", { date: fmtDate(change.confirmed_at) })}
+        {principal.isAdmin ? ` · ${insight.provider}${insight.model ? ` (${insight.model})` : ""} · tokens ${insight.input_tokens ?? 0}/${insight.output_tokens ?? 0} · ${fmtUsd(insight.estimated_cost_usd)} · significance ${change.significance}` : ""}
       </p>
       <pre class="diff">
         {removed.map((l) => (
@@ -749,30 +753,31 @@ export const InsightDetailPage: FC<{ principal: Principal; insight: Insight; cha
       </pre>
       <form method="post" action={`/insights/${insight.id}/reanalyze`}>
         <button class="secondary tiny" type="submit">
-          Re-analyse this change
+          {t("ins.reanalyse")}
         </button>
       </form>
     </Layout>
   );
 };
 
-export const PageDetailPage: FC<{ principal: Principal; page: MonitoredPage; competitor: Competitor; snapshots: Omit<Snapshot, "raw_gzip" | "text">[]; changes: Change[]; latestText: string | null }> = ({
+export const PageDetailPage: FC<{ principal: Principal; t: Translate; page: MonitoredPage; competitor: Competitor; snapshots: Omit<Snapshot, "raw_gzip" | "text">[]; changes: Change[]; latestText: string | null }> = ({
   principal,
+  t,
   page,
   competitor,
   snapshots,
   changes,
   latestText,
 }) => (
-  <Layout title={page.url} principal={principal}>
+  <Layout title={page.url} principal={principal} t={t}>
     <p class="muted small">
-      <a href="/">Dashboard</a> / <a href={`/b/${competitor.business_id}`}>back</a> / page
+      <a href="/">{t("nav.dashboard")}</a> / <a href={`/b/${competitor.business_id}`}>{competitor.name}</a>
     </p>
     <h1 style="font-size:1.3rem;word-break:break-all">{page.url}</h1>
     <p class="row small">
       <StatusBadge page={page} />
       <span class="muted">
-        {competitor.name} · {page.kind} · every {humanMinutes(page.check_interval_minutes)} · next check {fmtDate(page.next_check_at)} · consecutive failures {page.consecutive_failures} · status since {fmtDate(page.status_since)}
+        {competitor.name} · {t(`kind.${page.kind}`)} · {t("page.every", { interval: humanMinutes(page.check_interval_minutes) })} · next {fmtDate(page.next_check_at)} · failures {page.consecutive_failures} · since {fmtDate(page.status_since)}
       </span>
     </p>
     {page.status_message ? <div class="card alert small">{page.status_message}</div> : null}
@@ -821,37 +826,51 @@ export const PageDetailPage: FC<{ principal: Principal; page: MonitoredPage; com
   </Layout>
 );
 
-export const SettingsPage: FC<{ principal: Principal; account: Account; users: User[]; keys: ApiKey[]; newKey?: string | undefined; flash?: string | undefined; error?: string | undefined }> = ({ principal, account, users, keys, newKey, flash, error }) => (
-  <Layout title="Settings" principal={principal} flash={flash}>
-    <h1>Settings</h1>
+export const SettingsPage: FC<{ principal: Principal; t: Translate; account: Account; users: User[]; keys: ApiKey[]; newKey?: string | undefined; flash?: string | undefined; error?: string | undefined }> = ({ principal, t, account, users, keys, newKey, flash, error }) => (
+  <Layout title={t("set.title")} principal={principal} flash={flash} t={t}>
+    <h1>{t("set.title")}</h1>
     {error ? <div class="card alert">{error}</div> : null}
-    <div class="grid g2">
+    <div class="grid g3">
       <div class="card">
-        <h3 style="margin-top:0">Account</h3>
+        <h3 style="margin-top:0">{t("set.account")}</h3>
         <p>
-          <strong>{account.name}</strong> <span class="badge brand">{getPlan(account.plan).name} plan</span>
+          <strong>{account.name}</strong> <span class="badge brand">{t("dash.plan", { plan: getPlan(account.plan).name })}</span>
         </p>
-        <p class="muted small">Members: {users.map((u) => u.email).join(", ")}</p>
-        <p class="muted small">
-          Need a bigger plan? Email <a href={`mailto:${COMPANY.contact}`}>{COMPANY.contact}</a> while billing is in early access.
-        </p>
+        <p class="muted small">{t("set.members", { list: users.map((u) => u.email).join(", ") })}</p>
+        <p class="muted small">{t("set.bigger", { email: COMPANY.contact })}</p>
       </div>
       <div class="card">
-        <h3 style="margin-top:0">Password</h3>
-        <p class="muted small">{principal.user.password_hash ? `A password is set (since ${fmtDate(principal.user.password_set_at)}). You can still sign in with an email link.` : "Optional. You can always sign in with an email link; a password just adds a second way in."}</p>
+        <h3 style="margin-top:0">{t("set.language")}</h3>
+        <p class="muted small">{t("set.language.p")}</p>
+        <form method="post" action="/settings/language" class="inline">
+          <select name="lang">
+            {LOCALES.map((l: Locale) => (
+              <option value={l} selected={l === t.locale}>
+                {translator(l)("lang.name")}
+              </option>
+            ))}
+          </select>
+          <button class="secondary tiny" type="submit">
+            {t("set.language.save")}
+          </button>
+        </form>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">{t("set.pw.h")}</h3>
+        <p class="muted small">{principal.user.password_hash ? t("set.pw.set", { date: fmtDate(principal.user.password_set_at) }) : t("set.pw.unset")}</p>
         <form method="post" action="/settings/password">
           <label>
-            {principal.user.password_hash ? "New password" : "Choose a password"}
+            {principal.user.password_hash ? t("set.pw.new") : t("set.pw.choose")}
             <input name="password" type="password" required minlength={12} maxlength={128} autocomplete="new-password" />
           </label>
-          <p class="tiny muted">At least 12 characters. A short sentence is easier to remember than symbols.</p>
+          <p class="tiny muted">{t("set.pw.hint")}</p>
           <div class="row">
             <button type="submit" class="secondary tiny">
-              {principal.user.password_hash ? "Change password" : "Set password"}
+              {principal.user.password_hash ? t("set.pw.change") : t("set.pw.setbtn")}
             </button>
             {principal.user.password_hash ? (
               <button type="submit" class="danger tiny" formaction="/settings/password/remove">
-                Remove password
+                {t("set.pw.remove")}
               </button>
             ) : null}
           </div>
@@ -859,27 +878,16 @@ export const SettingsPage: FC<{ principal: Principal; account: Account; users: U
       </div>
     </div>
 
-    <h2>API keys</h2>
+    <h2>{t("set.keys.h")}</h2>
     <div class="card">
-      <p class="muted small">
-        For scripts and AI agents. Send as <code>Authorization: Bearer rw_…</code>. Actions are attributed to <code>agent:&lt;name&gt;</code> in your audit trail and are limited to this account.
-      </p>
+      <p class="muted small">{t("set.keys.p")}</p>
       {newKey ? (
         <div class="card good">
-          <strong>New key (shown once):</strong> <code>{newKey}</code>
+          <strong>{t("set.keys.new")}</strong> <code>{newKey}</code>
         </div>
       ) : null}
       {keys.length ? (
         <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Prefix</th>
-              <th>Created</th>
-              <th>Last used</th>
-              <th></th>
-            </tr>
-          </thead>
           <tbody>
             {keys.map((k) => (
               <tr>
@@ -891,11 +899,11 @@ export const SettingsPage: FC<{ principal: Principal; account: Account; users: U
                 <td class="muted small">{fmtDate(k.last_used_at)}</td>
                 <td style="text-align:right">
                   {k.revoked_at ? (
-                    <span class="badge">revoked</span>
+                    <span class="badge">{t("set.keys.revoked")}</span>
                   ) : (
                     <form method="post" action={`/settings/api-keys/${k.id}/revoke`}>
                       <button class="danger tiny" type="submit">
-                        Revoke
+                        {t("set.keys.revoke")}
                       </button>
                     </form>
                   )}
@@ -907,45 +915,45 @@ export const SettingsPage: FC<{ principal: Principal; account: Account; users: U
       ) : null}
       <form method="post" action="/settings/api-keys" class="inline" style="margin-top:.75rem">
         <label>
-          Key name <input name="name" required pattern="[A-Za-z0-9._-]{1,64}" placeholder="my-script" />
+          {t("set.keys.name")} <input name="name" required pattern="[A-Za-z0-9._-]{1,64}" placeholder="my-script" />
         </label>
         <button class="secondary" type="submit">
-          Create API key
+          {t("set.keys.create")}
         </button>
       </form>
     </div>
 
-    <h2>Your data</h2>
+    <h2>{t("set.data.h")}</h2>
     <div class="grid g2">
       <div class="card">
-        <h3 style="margin-top:0">Export</h3>
-        <p class="muted small">Download everything we hold about this account as a single JSON file: businesses, competitors, pages, snapshots (text), insights, feedback, emails, audit events.</p>
+        <h3 style="margin-top:0">{t("set.export.h")}</h3>
+        <p class="muted small">{t("set.export.p")}</p>
         <a class="btn secondary tiny" href="/settings/export">
-          Download my data (JSON)
+          {t("set.export.btn")}
         </a>
       </div>
       <div class="card">
-        <h3 style="margin-top:0">Delete account</h3>
+        <h3 style="margin-top:0">{t("set.delete.h")}</h3>
         {account.delete_after ? (
           <>
             <p class="small">
-              <strong>Deletion scheduled</strong> for {fmtDate(account.delete_after)}. Monitoring is paused. All data will be permanently removed after that date.
+              <strong>{t("set.delete.scheduled", { date: fmtDate(account.delete_after) })}</strong>
             </p>
             <form method="post" action="/settings/delete/cancel">
               <button class="secondary tiny" type="submit">
-                Cancel deletion
+                {t("set.delete.cancel")}
               </button>
             </form>
           </>
         ) : (
           <>
-            <p class="muted small">Removes this account and all its data after a 7-day grace period (you can cancel within that window). Audit records are kept without any personal identifiers.</p>
-            <form method="post" action="/settings/delete" onsubmit="return confirm('Delete this account and all of its data after 7 days?')">
+            <p class="muted small">{t("set.delete.p")}</p>
+            <form method="post" action="/settings/delete" onsubmit={`return confirm(${JSON.stringify(t("set.delete.js"))})`}>
               <label class="check small">
-                <input type="checkbox" name="confirm" value="1" required /> <span>I understand this is permanent.</span>
+                <input type="checkbox" name="confirm" value="1" required /> <span>{t("set.delete.confirm")}</span>
               </label>
               <button class="danger tiny" type="submit">
-                Delete my account
+                {t("set.delete.btn")}
               </button>
             </form>
           </>
@@ -953,13 +961,13 @@ export const SettingsPage: FC<{ principal: Principal; account: Account; users: U
       </div>
     </div>
     <p class="muted tiny">
-      Legal: <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · accepted version {LEGAL_VERSION}
+      {t("set.legal")}: <a href="/terms">{t("footer.terms")}</a> · <a href="/privacy">{t("footer.privacy")}</a> · v{LEGAL_VERSION}
     </p>
   </Layout>
 );
 
 // ---------------------------------------------------------------------------
-// Admin
+// Admin (operator-facing, English only)
 // ---------------------------------------------------------------------------
 
 export type ApprovalView = Approval & { summary: string };
@@ -1252,6 +1260,7 @@ export const AdminPage: FC<{ principal: Principal; o: AdminOverview; flash?: str
             <th>Email</th>
             <th>Account</th>
             <th>Plan</th>
+            <th>Lang</th>
             <th>Admin</th>
             <th>Joined</th>
             <th>Last login</th>
@@ -1278,6 +1287,7 @@ export const AdminPage: FC<{ principal: Principal; o: AdminOverview; flash?: str
                   </button>
                 </form>
               </td>
+              <td class="muted small">{u.locale ?? "—"}</td>
               <td>{u.is_admin ? "yes" : ""}</td>
               <td class="muted small">{fmtDate(u.created_at)}</td>
               <td class="muted small">{fmtDate(u.last_login_at)}</td>

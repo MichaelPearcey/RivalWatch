@@ -252,6 +252,20 @@ shell with the app. Rationale: fastest possible pages, zero third-party
 requests (privacy), trivially testable HTML, and the product's UI surface is
 small. Revisit if we need rich interactivity (charts, live updates).
 
+## ADR-020: Internationalisation (EN, UK, RU, DE, FR, ES)
+
+**Decision.** Typed message catalogue in `src/i18n/` (`en.ts` is the source of
+truth; every other locale is `Record<keyof typeof en, string>` so a missing key
+is a compile error). Locale resolution: cookie `rw_lang` → signed-in user's
+`users.locale` → `Accept-Language` → English. A nav switcher (`GET /lang`) sets
+the cookie and, when signed in, the user preference. The analyser prompt is
+told the owner's language so insights are written in it; digests are rendered
+per recipient. **Legal documents remain English-only** with a notice that the
+English version is binding (machine-translated legal text without per-language
+legal review is a liability). The admin dashboard is English-only
+(operator-facing). Translations were written by the engineering agent and need
+a native-speaker review before marketing in those languages.
+
 ## INCIDENT-001 (2026-09-06): vendor API keys exposed in an agent transcript
 
 **What happened.** While listing Railway variable *names*, an ad-hoc PowerShell
