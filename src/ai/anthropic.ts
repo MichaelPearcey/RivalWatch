@@ -6,8 +6,14 @@ import { InsightDraftSchema, type AnalysisInput, type AnalysisResult, type Analy
 export interface AnthropicAnalyzerOptions {
   apiKey: string;
   model: string;
+  /** Needed when the key is not scoped to a workspace. */
+  workspaceId?: string | undefined;
   /** Injectable for tests. */
   client?: Pick<Anthropic["messages"], "create">;
+}
+
+export function createAnthropicClient(apiKey: string, workspaceId?: string): Anthropic {
+  return new Anthropic({ apiKey, ...(workspaceId ? { defaultHeaders: { "anthropic-workspace-id": workspaceId } } : {}) });
 }
 
 export class AnthropicAnalyzer implements Analyzer {
@@ -15,7 +21,7 @@ export class AnthropicAnalyzer implements Analyzer {
   private readonly client: Pick<Anthropic["messages"], "create">;
 
   constructor(private readonly opts: AnthropicAnalyzerOptions) {
-    this.client = opts.client ?? new Anthropic({ apiKey: opts.apiKey }).messages;
+    this.client = opts.client ?? createAnthropicClient(opts.apiKey, opts.workspaceId).messages;
   }
 
   async analyze(input: AnalysisInput): Promise<AnalysisResult> {

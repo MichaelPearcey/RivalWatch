@@ -81,7 +81,7 @@ export class GuardedAnalyzer implements Analyzer {
 
 export function createAnalyzer(cfg: Config, events: Events): Analyzer {
   const primary: Analyzer =
-    cfg.AI_PROVIDER === "anthropic" ? new AnthropicAnalyzer({ apiKey: cfg.ANTHROPIC_API_KEY!, model: cfg.ANTHROPIC_MODEL }) : new HeuristicAnalyzer();
+    cfg.AI_PROVIDER === "anthropic" ? new AnthropicAnalyzer({ apiKey: cfg.ANTHROPIC_API_KEY!, model: cfg.ANTHROPIC_MODEL, workspaceId: cfg.ANTHROPIC_WORKSPACE_ID }) : new HeuristicAnalyzer();
   return new GuardedAnalyzer(primary, events, {
     dailyCallCap: cfg.AI_DAILY_CALL_CAP,
     dailyCostCapUsd: cfg.AI_DAILY_COST_CAP_USD,

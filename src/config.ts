@@ -52,6 +52,8 @@ const ConfigSchema = z.object({
   AI_PROVIDER: z.enum(["heuristic", "anthropic"]).default("heuristic"),
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default("claude-haiku-4-5"),
+  /** Required when the API key is not scoped to a workspace (Console -> Settings -> Workspaces). */
+  ANTHROPIC_WORKSPACE_ID: z.string().optional(),
   /** USD per million tokens, used for cost estimates. Defaults match Claude Haiku 4.5 list price. */
   AI_INPUT_COST_PER_MTOK: z.coerce.number().nonnegative().default(1.0),
   AI_OUTPUT_COST_PER_MTOK: z.coerce.number().nonnegative().default(5.0),
