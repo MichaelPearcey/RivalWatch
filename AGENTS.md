@@ -45,7 +45,16 @@ npm run build      # tsc + copies src/db/migrations/*.sql into dist/
   `Analyzer` and are wrapped by `GuardedAnalyzer` (cap + fallback + events).
 - New data sources implement `Source` (`src/sources/types.ts`) and register in
   `src/app.ts`. The pipeline must stay source-agnostic.
-- Secrets: only `src/config.ts` reads env. Never log secret values.
+- Secrets: only `src/config.ts` reads env. Never log secret values. **Never
+  handle secret values in ad-hoc shell one-liners** - see INCIDENT-001 in
+  `docs/03-decisions.md`. To put a secret on Railway use
+  `scripts/railway-set-secret.ps1 -Name VAR -FromFile <path outside repo>`.
+  To list Railway variables safely: `railway variables --json 2>$null |
+  Out-String | ConvertFrom-Json` then take `.PSObject.Properties.Name` only,
+  and never pipe per-line into a parser (a parse failure echoes values).
+- Railway: project token lives in `.env` as `RAILWAY_TOKEN` (gitignored).
+  `railway status`, `railway variables`, `railway up`/redeploy work from the
+  repo root. Do not print `railway variables` without `--json` + names filter.
 - Record consequential decisions as an ADR in `docs/03-decisions.md`.
 
 ## Permission tiers (see docs/02-architecture.md)

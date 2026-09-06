@@ -169,6 +169,30 @@ No Postgres, no Redis, no worker. See `docs/07-deployment.md`.
 acceptable for MVP testing. Scaling beyond one instance requires extracting the
 scheduler first.
 
+## INCIDENT-001 (2026-09-06): vendor API keys exposed in an agent transcript
+
+**What happened.** While listing Railway variable *names*, an ad-hoc PowerShell
+one-liner's JSON parsing failed and echoed variable *values* in its error
+output, putting the Anthropic and Resend API keys into the Devin session
+transcript. Earlier the same day the owner also pasted a GitHub PAT directly
+into chat.
+
+**Response.** Owner asked to rotate both keys and revoke the PAT; the leaked
+bootstrap token was already single-use and its variable was deleted.
+
+**Rule (binding for all agents and humans working on this repo).**
+1. Never handle secret values with ad-hoc shell one-liners. Use
+   `scripts/railway-set-secret.ps1` (reads from a file, scrubs errors, prints
+   names/lengths only) or an equivalent reviewed script.
+2. Never run a command whose *failure path* could print values (JSON parsing of
+   secret-bearing output, `env`, `Get-Content` on `.env`, etc.). List names via
+   a parser that is known to succeed, or not at all.
+3. Secrets travel: owner -> local file outside the repo -> script -> Railway.
+   They never appear in chat, git, logs or docs. Owners should never paste
+   secrets into chat; agents must say so immediately if it happens.
+4. Any exposure, however brief, is treated as a compromise: rotate, then note
+   it here.
+
 ## ADR-014: Audit format on events
 
 **Decision.** `events` gained `account_id, risk_level, requested_by,
