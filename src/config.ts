@@ -68,6 +68,20 @@ const ConfigSchema = z.object({
   /** Rolling 24h cap across all agent runs (USD). */
   AGENT_DAILY_COST_CAP_USD: z.coerce.number().nonnegative().default(1),
 
+  /** Nightly SQLite backups (VACUUM INTO + gzip) kept on the volume and optionally uploaded to S3-compatible storage. */
+  BACKUP_ENABLED: bool(true),
+  BACKUP_DIR: z.string().default("./data/backups"),
+  BACKUP_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(3),
+  BACKUP_KEEP_LOCAL: z.coerce.number().int().min(1).default(7),
+  BACKUP_S3_BUCKET: z.string().optional(),
+  BACKUP_S3_ENDPOINT: z.string().optional(),
+  BACKUP_S3_REGION: z.string().default("auto"),
+  BACKUP_S3_PREFIX: z.string().default("rivalwatch/"),
+  BACKUP_S3_ACCESS_KEY_ID: z.string().optional(),
+  BACKUP_S3_SECRET_ACCESS_KEY: z.string().optional(),
+  /** Raw HTML of snapshots older than this is dropped; extracted text is kept. */
+  SNAPSHOT_RAW_RETENTION_DAYS: z.coerce.number().int().min(1).default(30),
+
   EMAIL_PROVIDER: z.enum(["log", "resend"]).default("log"),
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default("RivalWatch <onboarding@resend.dev>"),
@@ -116,7 +130,7 @@ export class ConfigError extends Error {
   readonly name = "ConfigError";
 }
 
-const SECRET_KEYS = ["ANTHROPIC_API_KEY", "RESEND_API_KEY", "BOOTSTRAP_ADMIN_TOKEN"] as const;
+const SECRET_KEYS = ["ANTHROPIC_API_KEY", "RESEND_API_KEY", "BOOTSTRAP_ADMIN_TOKEN", "BACKUP_S3_ACCESS_KEY_ID", "BACKUP_S3_SECRET_ACCESS_KEY"] as const;
 
 /** Config with secrets removed, safe to log or expose on /health. */
 export function redactConfig(cfg: Config): Record<string, unknown> {

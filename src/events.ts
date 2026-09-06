@@ -59,6 +59,9 @@ export type EventType =
   | "digest.sent"
   | "digest.skipped"
   // scheduler / ops
+  | "backup.completed"
+  | "backup.failed"
+  | "retention.applied"
   | "scheduler.tick"
   | "scheduler.error"
   | "app.started"

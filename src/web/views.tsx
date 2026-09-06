@@ -542,6 +542,7 @@ export const SettingsPage: FC<{ principal: Principal; account: Account; users: U
 export type ApprovalView = Approval & { summary: string };
 
 export interface AdminOverview {
+  backups: { offsite: boolean; lastAt: string | null; lastOk: boolean | null; local: number };
   agents: { enabled: boolean; state: (AgentStateRow & { title: string; description: string; interval_hours: number })[]; runs: AgentRunRow[]; notes: AgentNote[]; cost24h: number };
   pendingApprovals: ApprovalView[];
   recentApprovals: ApprovalView[];
@@ -775,6 +776,20 @@ export const AdminPage: FC<{ principal: Principal; o: AdminOverview; flash?: str
         <div class="muted">
           provider {o.ai.provider} · model {o.ai.model} · cap hit {o.ai.capReached24h}× in 24h
         </div>
+      </div>
+    </div>
+
+    <div class={`card${o.backups.lastOk === false || (o.backups.lastAt && Date.now() - new Date(o.backups.lastAt).getTime() > 2 * 86_400_000) ? " alert" : ""}`}>
+      <div class="row">
+        <h2 style="margin:0">Backups</h2>
+        <span class="muted">
+          last: {o.backups.lastAt ? `${fmtDate(o.backups.lastAt)} (${o.backups.lastOk ? "ok" : "FAILED"})` : "never"} · local copies: {o.backups.local} · off-site: {o.backups.offsite ? "configured" : <span style="color:var(--warn)">not configured — volume loss would lose all data</span>}
+        </span>
+        <form method="post" action="/admin/backups/run" style="margin-left:auto">
+          <button class="tiny secondary" type="submit">
+            Back up now
+          </button>
+        </form>
       </div>
     </div>
 

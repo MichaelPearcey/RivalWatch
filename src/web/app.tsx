@@ -288,6 +288,10 @@ export function createWebApp(app: App) {
   });
   api.post("/admin/scheduler/tick", requireAdmin, async (c) => c.json({ processed: await app.scheduler.tick() }));
 
+  // Backups (operator-only)
+  api.get("/admin/backups", requireAdmin, (c) => c.json({ offsite: app.backups.offsiteConfigured, local: app.backups.listLocal(), last: events.list({ types: ["backup.completed", "backup.failed"], limit: 5 }) }));
+  api.post("/admin/backups/run", requireAdmin, async (c) => c.json(await app.backups.run(P(c).actor)));
+
   // Agents (operator-only)
   api.get("/admin/agents", requireAdmin, (c) => c.json({ enabled: app.agents.enabled, agents: app.agents.state(), runs: app.agents.runs({ limit: 20 }), cost_24h_usd: app.agents.costSince(new Date(Date.now() - 86_400_000).toISOString()) }));
   api.post("/admin/agents/:name/run", requireAdmin, async (c) => {
@@ -484,6 +488,12 @@ export function createWebApp(app: App) {
       app.agents.setEnabled(name, verb === "enable", P(c).actor);
     });
   });
+  ui.post("/admin/backups/run", requireAdmin, async (c) =>
+    tryUi(c, "/admin", async () => {
+      const r = await app.backups.run(P(c).actor);
+      return r.ok ? `Backup written (${(r.bytes / 1024).toFixed(0)} KB)${r.uploaded ? " and uploaded off-site" : " locally only"}.` : `Backup failed: ${r.error}`;
+    }),
+  );
   ui.post("/admin/notes/:id/read", requireAdmin, (c) => {
     app.agents.markNoteRead(id(c));
     return c.redirect("/admin");

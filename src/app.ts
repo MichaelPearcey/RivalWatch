@@ -4,6 +4,7 @@ import { Agents } from "./agents/index.js";
 import type { MessagesClient } from "./agents/runner.js";
 import { Approvals } from "./approvals.js";
 import { Auth } from "./auth.js";
+import { Backups } from "./backup.js";
 import type { Config } from "./config.js";
 import { openAndMigrate, type Db } from "./db/index.js";
 import { Repo } from "./db/repo.js";
@@ -33,6 +34,7 @@ export interface App {
   digests: DigestJob;
   approvals: Approvals;
   agents: Agents;
+  backups: Backups;
   close(): void;
 }
 
@@ -83,6 +85,7 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
     digests,
     approvals: undefined as unknown as Approvals,
     agents: undefined as unknown as Agents,
+    backups: new Backups(cfg, db, events),
     close() {
       scheduler.stop();
       db.close();
@@ -92,5 +95,6 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
   app.agents = new Agents(app, cfg, overrides.agentClient);
   scheduler.addJob({ name: "approvals_expire", run: (now) => void app.approvals.expireStale(now) });
   scheduler.addJob({ name: "agents", run: (now) => app.agents.runDue(now).then(() => undefined) });
+  scheduler.addJob({ name: "backups", run: (now) => app.backups.runDue(now).then(() => undefined) });
   return app;
 }

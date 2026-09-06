@@ -12,6 +12,7 @@ const USAGE = `rivalwatch CLI
   tick                    process all due pages + jobs once and exit (cron-friendly)
   make-admin <email>      create (if needed) and flag a user as platform admin
   login-link <email>      print a one-time sign-in link (local/ops use; requires log email provider or prints anyway)
+  backup                  write a gzipped SQLite backup now (and upload if BACKUP_S3_* is set)
   demo                    start the server with the demo site, seed a demo account, run the full loop, keep serving
 `;
 
@@ -54,6 +55,14 @@ async function main(argv: string[]): Promise<void> {
       const r = await app.auth.requestLogin(email, "cli");
       process.stdout.write(r.devLink ? `${r.devLink}\n` : `Sign-in email sent via ${app.mailer.providerName}.\n`);
       app.close();
+      return;
+    }
+    case "backup": {
+      const app = createApp(cfg);
+      const r = await app.backups.run("cli");
+      process.stdout.write(`${JSON.stringify(r)}\n`);
+      app.close();
+      if (!r.ok) process.exitCode = 1;
       return;
     }
     case "demo":

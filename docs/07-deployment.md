@@ -88,9 +88,34 @@ instance; running two would double-fetch. (`railway.json` pins `numReplicas: 1`.
 
 ## Backups
 
-The SQLite file is the whole system. Until Litestream is added (roadmap):
-`railway volume` snapshots, or `railway run` + `sqlite3 /data/rivalwatch.db ".backup /data/backup.db"`
-and download. Do this before every schema migration deploy.
+The SQLite file is the whole system. Every night at `BACKUP_HOUR_UTC` (03:00)
+the app runs `VACUUM INTO` (a consistent copy while running), gzips it into
+`BACKUP_DIR` (`/data/backups` on the volume), keeps `BACKUP_KEEP_LOCAL` (7)
+copies, and clears raw HTML from snapshots older than
+`SNAPSHOT_RAW_RETENTION_DAYS` (30). Each run emits `backup.completed` or
+`backup.failed`; `/admin` shows the last result and warns when off-site storage
+is not configured. `POST /api/admin/backups/run` or the **Back up now** button
+runs one immediately; `npm run cli -- backup` does the same from a shell.
+
+**Off-site (recommended before real customers).** Local copies live on the same
+volume as the database, so they protect against bad migrations, not volume
+loss. Configure any S3-compatible bucket (Cloudflare R2 has a free 10 GB tier;
+Backblaze B2 likewise):
+
+| Variable | Example (R2) |
+|----------|--------------|
+| `BACKUP_S3_BUCKET` | `rivalwatch-backups` |
+| `BACKUP_S3_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` |
+| `BACKUP_S3_REGION` | `auto` |
+| `BACKUP_S3_ACCESS_KEY_ID` / `BACKUP_S3_SECRET_ACCESS_KEY` | from an R2 API token with *Object Read & Write* on that bucket only (secret: set via `scripts/railway-set-secret.ps1`) |
+
+Set a lifecycle rule on the bucket (e.g. delete after 90 days).
+
+**Restore.** Download the newest `rivalwatch-<timestamp>.db.gz`, `gunzip` it,
+and either upload it to the volume as `/data/rivalwatch.db` (stop the service
+first) or point `DATABASE_PATH` at the restored file. Migrations run
+automatically on boot, so restoring an older backup into a newer build is safe.
+Restore test: `npm run cli -- migrate` against the restored file locally.
 
 ## Operating costs (recurring, at the time of writing)
 

@@ -33,7 +33,9 @@ export function adminOverview(app: App): AdminOverview {
   const aiCost = (since: string) => (db.prepare("SELECT COALESCE(SUM(estimated_cost_usd),0) s FROM events WHERE type = 'ai.call' AND ts >= ?").get(since) as { s: number }).s;
 
   const describe = (a: Approval) => ({ ...a, summary: app.approvals.describe(a) });
+  const lastBackup = events.list({ types: ["backup.completed", "backup.failed"], limit: 1 })[0];
   return {
+    backups: { offsite: app.backups.offsiteConfigured, lastAt: lastBackup?.ts ?? null, lastOk: lastBackup ? lastBackup.type === "backup.completed" : null, local: app.backups.listLocal().length },
     agents: { enabled: app.agents.enabled, state: app.agents.state(), runs: app.agents.runs({ limit: 10 }), notes: app.agents.notes({ limit: 20 }), cost24h: app.agents.costSince(d1) },
     pendingApprovals: app.approvals.list({ status: "pending" }).map(describe),
     recentApprovals: app.approvals.list({ limit: 20 }).filter((a) => a.status !== "pending").map(describe),
