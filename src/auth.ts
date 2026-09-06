@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Config } from "./config.js";
 import type { Repo, User } from "./db/repo.js";
 import type { Events } from "./events.js";
+import { log } from "./logger.js";
 import type { Mailer } from "./mail/index.js";
 import { maskEmail } from "./mail/index.js";
 
@@ -113,8 +114,18 @@ export class Auth {
     const anyAdminLoggedIn = this.repo.count("SELECT COUNT(*) c FROM users WHERE is_admin = 1 AND last_login_at IS NOT NULL") > 0;
     const ok = !!expected && expected.length >= 16 && safeEqual(token, expected) && this.isAdminEmail(email) && !anyAdminLoggedIn;
     if (!ok) {
-      this.events.record({ type: "user.login_failed", result: "denied", riskLevel: "high", payload: { reason: "bootstrap_rejected", email: maskEmail(email), configured: !!expected, admin_email: this.isAdminEmail(email), already_bootstrapped: anyAdminLoggedIn } });
-      throw new AuthError(403, "Bootstrap sign-in is not available.");
+      const why = {
+        token_configured: !!expected,
+        token_long_enough: !!expected && expected.length >= 16,
+        token_matches: !!expected && safeEqual(token, expected),
+        email_is_admin: this.isAdminEmail(email),
+        admin_emails_configured: this.cfg.ADMIN_EMAILS.length,
+        already_bootstrapped: anyAdminLoggedIn,
+      };
+      // Operator-facing diagnostics: flags only, never values.
+      log.warn("bootstrap sign-in rejected", { email: maskEmail(email), ...why });
+      this.events.record({ type: "user.login_failed", result: "denied", riskLevel: "high", payload: { reason: "bootstrap_rejected", email: maskEmail(email), ...why } });
+      throw new AuthError(403, `Bootstrap sign-in is not available (${Object.entries(why).filter(([, v]) => v === false).map(([k]) => k).join(", ") || "already used"}).`);
     }
     const result = this.establishSession(email, "bootstrap");
     this.events.record({ type: "agent.action", actor: `user:${result.user.id}`, accountId: result.user.account_id, entity: { type: "user", id: result.user.id }, riskLevel: "high", requestedBy: "operator", approvedBy: "env:BOOTSTRAP_ADMIN_TOKEN", payload: { action: "bootstrap_admin_login" } });
