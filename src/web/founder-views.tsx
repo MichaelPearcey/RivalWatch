@@ -8,6 +8,44 @@ import { Layout } from "./views.js";
 
 const fmt = (iso: string) => iso.replace("T", " ").slice(0, 16);
 
+/** Streams the reply via SSE (fetch + ReadableStream, since EventSource cannot POST). Falls back to the plain form post if fetch fails. */
+const CHAT_JS = `
+(function(){
+  var form=document.getElementById('chat');if(!form)return;
+  var ta=form.querySelector('textarea'),btn=form.querySelector('button'),end=document.getElementById('thread-end');
+  var esc=function(s){return s.replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})};
+  var bubble=function(role,inner){var d=document.createElement('div');d.className='bubble '+role;d.innerHTML=inner;end.parentNode.insertBefore(d,end);d.scrollIntoView({block:'end'});return d};
+  ta.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit()}});
+  form.addEventListener('submit',function(e){
+    e.preventDefault();var text=ta.value.trim();if(!text)return;
+    bubble('user','<div class="tiny muted">You · now</div><div class="prose small">'+esc(text).replace(/\\n/g,'<br>')+'</div>');
+    ta.value='';ta.readOnly=true;btn.disabled=true;btn.innerHTML='<span class="spin"></span> Thinking…';
+    var act=document.createElement('div');act.className='tiny muted activity';act.style.margin='.4rem 0';end.parentNode.insertBefore(act,end);
+    var a=bubble('assistant','<div class="tiny muted">Founder · <span class="spin"></span></div><div class="prose small live"></div>');
+    var live=a.querySelector('.live'),buf='';
+    var finish=function(){ta.readOnly=false;btn.disabled=false;btn.textContent='Send';ta.focus()};
+    fetch(form.action,{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded','accept':'text/event-stream'},body:'text='+encodeURIComponent(text)}).then(function(res){
+      if(!res.ok||!res.body){throw new Error('HTTP '+res.status)}
+      var reader=res.body.getReader(),dec=new TextDecoder(),rest='';
+      var handle=function(ev){
+        if(ev.type==='text'){buf+=ev.delta;live.innerHTML=esc(buf).replace(/\\n/g,'<br>');a.scrollIntoView({block:'end'})}
+        else if(ev.type==='text_start'){if(buf){buf='';}}
+        else if(ev.type==='tool_start'){var li=document.createElement('div');li.innerHTML='<span class="spin"></span> '+esc(ev.label);li.dataset.tool=ev.tool;act.appendChild(li);li.scrollIntoView({block:'end'})}
+        else if(ev.type==='tool_end'){var items=act.querySelectorAll('div');var li2=items[items.length-1];if(li2){li2.innerHTML=(ev.ok?'✓ ':'✗ ')+li2.textContent.trim()+(ev.summary?' <span class="muted">— '+esc(ev.summary)+'</span>':'')}}
+        else if(ev.type==='done'){live.innerHTML=ev.html;a.querySelector('.tiny').textContent='Founder · now · $'+Number(ev.cost).toFixed(3)+(ev.tool_calls?' · '+ev.tool_calls+' tool call(s)':'');finish()}
+        else if(ev.type==='error'){live.innerHTML='<span style="color:var(--bad)">'+esc(ev.message)+'</span>';finish()}
+      };
+      var pump=function(){return reader.read().then(function(r){
+        if(r.done){finish();return}
+        rest+=dec.decode(r.value,{stream:true});var parts=rest.split('\\n\\n');rest=parts.pop();
+        parts.forEach(function(chunk){chunk.split('\\n').forEach(function(line){if(line.indexOf('data: ')===0){try{handle(JSON.parse(line.slice(6)))}catch(e){}}})});
+        return pump();
+      })};
+      return pump();
+    }).catch(function(err){live.innerHTML='<span style="color:var(--bad)">Connection problem: '+esc(String(err.message||err))+'. Reload to see whether the reply was saved.</span>';finish()});
+  });
+})();`;
+
 export const FounderPage: FC<{ principal: Principal; conversations: Conversation[]; current: Conversation | null; messages: FounderMessage[]; memory: MemoryNote[]; available: boolean; model: string; flash?: string | undefined }> = ({ principal, conversations, current, messages, memory, available, model, flash }) => (
   <Layout title="Founder" principal={principal} flash={flash}>
     <div class="row top">
@@ -46,7 +84,7 @@ export const FounderPage: FC<{ principal: Principal; conversations: Conversation
                   </ul>
                 </details>
               ) : (
-                <div style={`margin:.5rem 0;padding:.75rem 1rem;border-radius:12px;${m.role === "user" ? "background:rgba(110,168,255,.12);border:1px solid rgba(110,168,255,.35);margin-left:15%" : "background:var(--surface-2);border:1px solid var(--line);margin-right:10%"}`}>
+                <div class={`bubble ${m.role}`}>
                   <div class="tiny muted" style="margin-bottom:.2rem">
                     {m.role === "user" ? "You" : "Founder"} · {fmt(m.created_at)}
                     {m.role === "assistant" && m.estimated_cost_usd ? ` · $${m.estimated_cost_usd.toFixed(3)}` : ""}
@@ -55,18 +93,17 @@ export const FounderPage: FC<{ principal: Principal; conversations: Conversation
                 </div>
               ),
             )}
-            <form method="post" action={`/admin/founder/${current.id}/send`} style="margin-top:.75rem" onsubmit="var b=this.querySelector('button');b.disabled=true;b.innerHTML='<span class=spin></span> Thinking…';this.querySelector('textarea').readOnly=true;document.getElementById('busy').style.display='block';">
-              <textarea name="text" required maxlength={8000} placeholder="Type your message…" style="min-height:5rem" autofocus></textarea>
+            <div id="thread-end"></div>
+            <form id="chat" method="post" action={`/admin/founder/${current.id}/send`} style="margin-top:.75rem">
+              <textarea name="text" required maxlength={8000} placeholder="Type your message… (Enter to send, Shift+Enter for a new line)" style="min-height:5rem" autofocus></textarea>
               <div class="row" style="margin-top:.5rem">
                 <button type="submit" disabled={!available}>
                   Send
                 </button>
-                <span class="muted tiny">Replies take 10–90 seconds when tools are used; editing files is at the slow end.</span>
-              </div>
-              <div id="busy" class="muted small" style="display:none;margin-top:.6rem">
-                <span class="spin"></span> The founder is reading, thinking and possibly editing files. This page will refresh with the reply — please don't close it.
+                <span id="hint" class="muted tiny">Replies stream in live. Editing files can take a minute or two.</span>
               </div>
             </form>
+            <script>{raw(CHAT_JS)}</script>
           </div>
         ) : (
           <div class="card empty">Start a new conversation.</div>

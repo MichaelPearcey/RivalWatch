@@ -17,7 +17,9 @@ import { createDemoSite } from "./demo-site.js";
 import { LANG_COOKIE, isLocale, resolveLocale, translator, type Translate } from "../i18n/index.js";
 import { crawlerPage, privacyPolicy, termsOfService } from "../legal.js";
 import { MEMORY_KINDS } from "../memory.js";
+import { streamSSE } from "hono/streaming";
 import { FounderPage } from "./founder-views.js";
+import { renderMarkdown } from "./md.js";
 import { AdminPage, BusinessPage, BusinessesPage, ConsentPage, InsightDetailPage, LandingPage, LegalPage, LoginPage, PageDetailPage, PricingPage, SettingsPage } from "./views.js";
 
 type Env = { Variables: { principal: Principal | undefined; t: Translate } };
@@ -719,8 +721,28 @@ export function createWebApp(app: App) {
   ui.post("/admin/founder/:id/send", requireAdmin, async (c) => {
     const cid = id(c);
     const form = await bodyOf(c);
+    const text = String(form.text ?? "").slice(0, 8000);
+    const p = P(c);
+    // Progressive enhancement: the page's JS asks for an event stream and renders it live; plain forms get a redirect.
+    if (c.req.header("accept")?.includes("text/event-stream")) {
+      return streamSSE(c, async (stream) => {
+        let seq = 0;
+        let chain = Promise.resolve();
+        // Writes are serialised and awaited before the stream closes, so the final event is never dropped.
+        const push = (ev: unknown) => (chain = chain.then(() => stream.writeSSE({ data: JSON.stringify(ev), id: String(++seq) })));
+        try {
+          await app.founder.send(p, cid, text, (ev) => {
+            if (ev.type === "done") push({ type: "done", html: renderMarkdown(ev.message.content), cost: ev.message.estimated_cost_usd, tool_calls: ev.message.tool_calls });
+            else push(ev);
+          });
+        } catch (err) {
+          push({ type: "error", message: (err as Error).message });
+        }
+        await chain;
+      });
+    }
     try {
-      await app.founder.send(P(c), cid, String(form.text ?? "").slice(0, 8000));
+      await app.founder.send(p, cid, text);
       return c.redirect(`/admin/founder/${cid}`);
     } catch (err) {
       return c.redirect(`/admin/founder/${cid}?flash=${encodeURIComponent((err as Error).message)}`);

@@ -110,6 +110,12 @@ section.block{padding:4.5rem 0 1rem}
 .prose h1{font-size:1.75rem}.prose h2{font-size:1.25rem;margin-top:1.75rem}.prose table{font-size:.9rem}
 details summary{cursor:pointer}
 
+/* founder chat */
+.bubble{margin:.5rem 0;padding:.75rem 1rem;border-radius:12px}
+.bubble.user{background:rgba(110,168,255,.12);border:1px solid rgba(110,168,255,.35);margin-left:15%}
+.bubble.assistant{background:var(--surface-2);border:1px solid var(--line);margin-right:10%}
+.activity div{padding:.1rem 0}
+
 /* spinner */
 .spin{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px}
 @keyframes spin{to{transform:rotate(360deg)}}

@@ -72,8 +72,8 @@ const ConfigSchema = z.object({
   FOUNDER_MODEL: z.string().default("claude-sonnet-4-5"),
   FOUNDER_INPUT_COST_PER_MTOK: z.coerce.number().nonnegative().default(3),
   FOUNDER_OUTPUT_COST_PER_MTOK: z.coerce.number().nonnegative().default(15),
-  FOUNDER_MAX_COST_PER_TURN_USD: z.coerce.number().nonnegative().default(0.5),
-  FOUNDER_DAILY_COST_CAP_USD: z.coerce.number().nonnegative().default(5),
+  FOUNDER_MAX_COST_PER_TURN_USD: z.coerce.number().nonnegative().default(2),
+  FOUNDER_DAILY_COST_CAP_USD: z.coerce.number().nonnegative().default(15),
 
   /** Repo access for the founder assistant (fine-grained token: contents+PRs write, actions read). Optional. */
   GITHUB_BOT_TOKEN: z.string().optional(),

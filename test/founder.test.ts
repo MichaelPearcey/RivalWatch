@@ -82,8 +82,10 @@ describe("founder assistant", () => {
     expect(req).toMatchObject({ author: "agent:founder", title: "Warmer landing colours", source: `conversation:${conv.id}`, status: "open" });
 
     // The system prompt carried existing memory and project docs; history is replayed on the next turn.
-    expect(client.sent[0]!.system).toContain("British English");
-    expect(client.sent[0]!.system).toContain("RivalWatch - Product Vision");
+    const sys = (client.sent[0]!.system as unknown as { text: string; cache_control?: unknown }[])[0]!;
+    expect(sys.text).toContain("British English");
+    expect(sys.text).toContain("RivalWatch - Product Vision");
+    expect(sys.cache_control).toEqual({ type: "ephemeral" });
     await json(t.web, `/api/admin/founder/conversations/${conv.id}/messages`, { method: "POST", session: admin, body: JSON.stringify({ text: "Thanks" }) });
     expect((client.sent.at(-1)!.messages as unknown[]).length).toBe(3); // user, assistant, user
 
@@ -113,6 +115,56 @@ describe("founder assistant", () => {
     const conv2 = (await json<{ id: number }>(t.web, "/api/admin/founder/conversations", { method: "POST", session: admin2 })).body;
     const r2 = await json<{ content: string }>(t.web, `/api/admin/founder/conversations/${conv2.id}/messages`, { method: "POST", session: admin2, body: JSON.stringify({ text: "go" }) });
     expect(r2.body.content).toContain("cut off by the output limit");
+  });
+
+  it("streams text deltas and tool activity over SSE, folding Anthropic stream events into a full message", async () => {
+    let call = 0;
+    const streaming: MessagesClient = {
+      create: (async () => {
+        call++;
+        const events =
+          call === 1
+            ? [
+                { type: "message_start", message: { id: "m1", model: "claude-test", usage: { input_tokens: 5000, output_tokens: 0, cache_creation_input_tokens: 8000, cache_read_input_tokens: 0 } } },
+                { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu1", name: "search_memory", input: {} } },
+                { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"query":"col' } },
+                { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: 'ours","limit":5}' } },
+                { type: "content_block_stop", index: 0 },
+                { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { output_tokens: 40 } },
+                { type: "message_stop" },
+              ]
+            : [
+                { type: "message_start", message: { id: "m2", model: "claude-test", usage: { input_tokens: 300, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 8000 } } },
+                { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+                { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Nothing " } },
+                { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "about colours yet." } },
+                { type: "content_block_stop", index: 0 },
+                { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 12 } },
+                { type: "message_stop" },
+              ];
+        return (async function* () {
+          for (const e of events) yield e;
+        })();
+      }) as never,
+    };
+    t = testApp(on, { founderClient: streaming, analyzer: { name: "fake", analyze: async () => { throw new Error("unused"); } } });
+    const admin = await login(t.web, "admin@rivalwatch.test");
+    const conv = (await json<{ id: number }>(t.web, "/api/admin/founder/conversations", { method: "POST", session: admin })).body;
+    const res = await t.web.request(`${t.base}/admin/founder/${conv.id}/send`, { method: "POST", headers: { cookie: admin.cookie, "content-type": "application/x-www-form-urlencoded", accept: "text/event-stream" }, body: "text=colours%3F" });
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+    const events = (await res.text())
+      .split("\n")
+      .filter((l) => l.startsWith("data: "))
+      .map((l) => JSON.parse(l.slice(6)) as { type: string; [k: string]: unknown });
+    expect(events.map((e) => e.type)).toEqual(["tool_start", "tool_end", "text_start", "text", "text", "done"]);
+    expect(events[0]!.label).toBe('Searching memory for "colours"');
+    expect(events[1]!.ok).toBe(true);
+    expect((events.at(-1)!.html as string)).toContain("Nothing about colours yet.");
+    // Stored message is complete and cost accounts for cache writes (1.25x) and reads (0.1x).
+    const msgs = t.app.founder.messages(conv.id);
+    expect(msgs.at(-1)!.content).toBe("Nothing about colours yet.");
+    const expected = (5000 * 3 + 8000 * 3 * 1.25 + 40 * 15 + 300 * 3 + 8000 * 3 * 0.1 + 12 * 15) / 1_000_000;
+    expect(msgs.at(-1)!.estimated_cost_usd).toBeCloseTo(expected, 6);
   });
 
   it("enforces the daily budget and isolates conversations per user", async () => {
