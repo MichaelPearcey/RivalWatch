@@ -48,11 +48,16 @@ describe("magic-link auth", () => {
     expect(sixth.status).toBe(429);
   });
 
-  it("unauthenticated requests are rejected (API 401, UI redirect)", async () => {
+  it("unauthenticated requests are rejected (API 401, UI redirect); the root shows the public landing page", async () => {
     expect((await json(t.web, "/api/businesses")).status).toBe(401);
-    const ui = await html(t.web, "/");
+    const ui = await html(t.web, "/settings");
     expect(ui.status).toBe(302);
-    expect(ui.location).toContain("/login");
+    expect(ui.location).toContain("/login?next=%2Fsettings");
+    const landing = await html(t.web, "/");
+    expect(landing.status).toBe(200);
+    expect(landing.text).toContain("Know when your competitors move");
+    for (const path of ["/pricing", "/privacy", "/terms", "/bot"]) expect((await html(t.web, path)).status, path).toBe(200);
+    expect((await html(t.web, "/privacy")).text).toContain("Privacy Policy");
   });
 
   it("admins are recognised from ADMIN_EMAILS; others cannot reach admin endpoints", async () => {

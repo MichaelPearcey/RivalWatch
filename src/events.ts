@@ -18,6 +18,13 @@ export type EventType =
   | "user.login"
   | "user.login_failed"
   | "user.logout"
+  | "user.password_set"
+  | "user.password_removed"
+  | "user.consent_recorded"
+  | "account.deletion_requested"
+  | "account.deletion_cancelled"
+  | "account.deleted"
+  | "account.data_exported"
   | "api_key.created"
   | "api_key.revoked"
   // customer/business lifecycle

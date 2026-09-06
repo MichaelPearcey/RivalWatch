@@ -2,8 +2,10 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Config } from "./config.js";
 import type { Repo, User } from "./db/repo.js";
 import type { Events } from "./events.js";
+import { LEGAL_VERSION } from "./legal.js";
 import { log } from "./logger.js";
 import type { Mailer } from "./mail/index.js";
+import { checkPasswordPolicy, hashPassword, needsRehash, verifyPassword } from "./password.js";
 import { maskEmail } from "./mail/index.js";
 
 export const SESSION_COOKIE = "rw_session";
@@ -19,7 +21,7 @@ export interface Principal {
 
 export class AuthError extends Error {
   constructor(
-    readonly status: 401 | 403 | 429,
+    readonly status: 400 | 401 | 403 | 429,
     message: string,
   ) {
     super(message);
@@ -138,7 +140,57 @@ export class Auth {
     return result;
   }
 
-  private establishSession(email: string, method: "magic_link" | "bootstrap"): { user: User; sessionToken: string; created: boolean } {
+  /**
+   * Optional password sign-in. Passwords are scrypt-hashed; 10 failures lock the
+   * account for 15 minutes; the response never distinguishes "no such user" from
+   * "wrong password". Magic links remain available and act as the reset path.
+   */
+  async loginWithPassword(emailRaw: string, password: string, ip: string | null): Promise<{ user: User; sessionToken: string }> {
+    const email = emailRaw.trim().toLowerCase();
+    const user = this.repo.getUserByEmail(email);
+    const deny = (reason: string, status: 401 | 429 = 401) => {
+      this.events.record({ type: "user.login_failed", accountId: user?.account_id ?? null, result: "denied", riskLevel: reason === "locked" ? "medium" : "low", payload: { method: "password", reason, email: maskEmail(email), ip } });
+      throw new AuthError(status, status === 429 ? "Too many failed attempts. Try again in 15 minutes, or use an email sign-in link." : "Incorrect email or password.");
+    };
+    if (!user || !user.password_hash) {
+      await hashPassword(password); // constant-ish time whether or not the user exists
+      return deny(user ? "no_password_set" : "no_such_user");
+    }
+    if (user.locked_until && user.locked_until > new Date().toISOString()) return deny("locked", 429);
+    if (!(await verifyPassword(password, user.password_hash))) {
+      const { locked } = this.repo.recordFailedLogin(user.id, 10, 15);
+      return deny(locked ? "locked" : "bad_password", locked ? 429 : 401);
+    }
+    if (needsRehash(user.password_hash)) this.repo.setUserPassword(user.id, await hashPassword(password));
+    const s = this.establishSession(email, "password");
+    return { user: s.user, sessionToken: s.sessionToken };
+  }
+
+  async setPassword(p: Principal, password: string, currentSessionToken?: string): Promise<void> {
+    const check = checkPasswordPolicy(password, p.user.email);
+    if (!check.ok) throw new AuthError(400, check.reason!);
+    this.repo.setUserPassword(p.user.id, await hashPassword(password));
+    // Changing the password signs out every other session.
+    const dropped = this.repo.deleteSessionsForUser(p.user.id, currentSessionToken ? hashToken(currentSessionToken) : undefined);
+    this.events.record({ type: "user.password_set", actor: p.actor, accountId: p.accountId, entity: { type: "user", id: p.user.id }, riskLevel: "medium", payload: { other_sessions_revoked: dropped } });
+  }
+
+  removePassword(p: Principal): void {
+    this.repo.setUserPassword(p.user.id, null);
+    this.events.record({ type: "user.password_removed", actor: p.actor, accountId: p.accountId, entity: { type: "user", id: p.user.id }, riskLevel: "medium" });
+  }
+
+  /** Records acceptance of the current legal documents. */
+  acceptLegal(user: User, ip: string | null): void {
+    for (const doc of ["terms", "privacy"]) this.repo.recordConsent(user.id, doc, LEGAL_VERSION, ip);
+    this.events.record({ type: "user.consent_recorded", actor: `user:${user.id}`, accountId: user.account_id, entity: { type: "user", id: user.id }, payload: { documents: ["terms", "privacy"], version: LEGAL_VERSION } });
+  }
+
+  hasCurrentConsent(user: User): boolean {
+    return this.repo.hasConsent(user.id, "terms", LEGAL_VERSION) && this.repo.hasConsent(user.id, "privacy", LEGAL_VERSION);
+  }
+
+  private establishSession(email: string, method: "magic_link" | "bootstrap" | "password"): { user: User; sessionToken: string; created: boolean } {
     let user = this.repo.getUserByEmail(email);
     let created = false;
     if (!user) {

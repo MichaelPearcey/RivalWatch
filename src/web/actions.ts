@@ -76,6 +76,65 @@ export async function setAccountPlan(app: App, admin: Principal, accountId: numb
   return { account_id: accountId, plan: planId, approval_id: done.id };
 }
 
+// ---------- Data subject rights ----------
+
+/** Everything we hold for the account, as JSON (UK GDPR right of access / portability). */
+export function exportAccountData(app: App, p: Principal): Record<string, unknown> {
+  const { repo, db } = app;
+  const acct = p.accountId;
+  const q = (sql: string) => db.prepare(sql).all(acct);
+  const data = {
+    exported_at: new Date().toISOString(),
+    account: repo.getAccount(acct),
+    users: repo.listUsers(acct).map(({ password_hash, ...u }) => ({ ...u, has_password: !!password_hash })),
+    consents: repo.listUsers(acct).flatMap((u) => repo.listConsents(u.id)),
+    businesses: q("SELECT * FROM businesses WHERE account_id = ?"),
+    competitors: q("SELECT * FROM competitors WHERE account_id = ?"),
+    monitored_pages: q("SELECT * FROM monitored_pages WHERE account_id = ?"),
+    page_suggestions: q("SELECT * FROM page_suggestions WHERE account_id = ?"),
+    snapshots: q("SELECT id, page_id, fetched_at, last_seen_at, http_status, content_type, content_hash, title, text, meta_json FROM snapshots WHERE account_id = ?"),
+    changes: q("SELECT * FROM changes WHERE account_id = ?"),
+    insights: q("SELECT * FROM insights WHERE account_id = ?"),
+    insight_feedback: q("SELECT * FROM insight_feedback WHERE account_id = ?"),
+    api_keys: q("SELECT id, name, key_prefix, created_at, last_used_at, revoked_at FROM api_keys WHERE account_id = ?"),
+    emails: q("SELECT id, to_address, kind, subject, provider, status, created_at FROM emails WHERE account_id = ?"),
+    events: q("SELECT ts, type, actor, entity_type, entity_id, result, payload FROM events WHERE account_id = ? ORDER BY ts"),
+    approvals: q("SELECT * FROM approvals WHERE account_id = ?"),
+  };
+  app.events.record({ type: "account.data_exported", actor: p.actor, accountId: acct, entity: { type: "account", id: acct }, riskLevel: "medium" });
+  return data;
+}
+
+export const DELETION_GRACE_DAYS = 7;
+
+/** Right to erasure: schedule hard deletion after a short grace period; sign the user out of all sessions except the current one. */
+export function requestAccountDeletion(app: App, p: Principal): { delete_after: string } {
+  if (p.user.role !== "owner") throw new ActionError(403, "only the account owner can delete the account");
+  const deleteAfter = new Date(Date.now() + DELETION_GRACE_DAYS * 86_400_000).toISOString();
+  app.repo.setAccountDeletion(p.accountId, deleteAfter);
+  for (const page of app.repo.listPagesAny({ limit: 10_000 }).filter((pg) => pg.account_id === p.accountId)) app.repo.setPageEnabled(p.accountId, page.id, false);
+  app.events.record({ type: "account.deletion_requested", actor: p.actor, accountId: p.accountId, entity: { type: "account", id: p.accountId }, riskLevel: "high", payload: { delete_after: deleteAfter } });
+  return { delete_after: deleteAfter };
+}
+
+export function cancelAccountDeletion(app: App, p: Principal): void {
+  const acct = app.repo.getAccount(p.accountId);
+  if (!acct?.delete_after) throw new ActionError(409, "no deletion pending");
+  app.repo.setAccountDeletion(p.accountId, null);
+  app.events.record({ type: "account.deletion_cancelled", actor: p.actor, accountId: p.accountId, entity: { type: "account", id: p.accountId }, riskLevel: "medium" });
+}
+
+/** Scheduler job: hard-delete accounts whose grace period has passed. */
+export function purgeDeletedAccounts(app: App, now = new Date()): number {
+  const due = app.repo.accountsDueForDeletion(now.toISOString());
+  for (const a of due) {
+    const counts = { users: app.repo.listUsers(a.id).length, businesses: app.repo.count("SELECT COUNT(*) c FROM businesses WHERE account_id = ?", a.id) };
+    app.repo.deleteAccount(a.id);
+    app.events.record({ type: "account.deleted", actor: "system", accountId: null, entity: { type: "account", id: a.id }, riskLevel: "high", payload: { requested_at: a.deletion_requested_at, ...counts } });
+  }
+  return due.length;
+}
+
 // ---------- Businesses ----------
 
 export function createBusiness(app: App, p: Principal, input: z.infer<typeof BusinessInput>): Business {

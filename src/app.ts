@@ -15,6 +15,7 @@ import { createMailer, type Mailer } from "./mail/index.js";
 import { Pipeline, type PipelineOptions } from "./monitor/pipeline.js";
 import { Scheduler } from "./monitor/scheduler.js";
 import { SourceRegistry } from "./sources/types.js";
+import { purgeDeletedAccounts } from "./web/actions.js";
 import { PoliteFetcher } from "./sources/website/fetcher.js";
 import { WebsiteSource } from "./sources/website/index.js";
 
@@ -96,5 +97,6 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
   scheduler.addJob({ name: "approvals_expire", run: (now) => void app.approvals.expireStale(now) });
   scheduler.addJob({ name: "agents", run: (now) => app.agents.runDue(now).then(() => undefined) });
   scheduler.addJob({ name: "backups", run: (now) => app.backups.runDue(now).then(() => undefined) });
+  scheduler.addJob({ name: "account_purge", run: (now) => void purgeDeletedAccounts(app, now) });
   return app;
 }

@@ -217,6 +217,41 @@ action (write); prompts cannot escalate beyond the tool set. Agents produce
 ≈ $4/month. Tool results are the main token cost; tools must stay terse.
 Verified live on 2026-09-06 with Claude Haiku 4.5 (see scripts/live-agent-check.ts).
 
+## ADR-017: Optional passwords with scrypt; magic links remain the recovery path
+
+**Decision.** Users may set a password in Settings. Hashes use Node's built-in
+`scrypt` with N=2^15, r=8, p=3 (OWASP-listed; ~32 MiB so a burst of logins
+cannot exhaust a 512 MB container), stored self-describing so parameters can be
+raised and re-hashed on next login. Policy is length-based (>= 12, NIST
+800-63B), no composition rules. 10 failures lock the account for 15 minutes;
+responses never reveal whether an email exists; a magic-link login clears the
+lock (it proves mailbox control) and doubles as password reset. Changing a
+password revokes all other sessions.
+
+## ADR-018: Data protection by design (UK GDPR)
+
+**Decision.** Versioned Terms and Privacy Policy in `src/legal.ts`; acceptance
+is recorded per user per version in `consents` and required before using the
+web app (API keys inherit the owner's acceptance). Users can export all their
+data as JSON and delete their account from Settings; deletion pauses
+monitoring, waits 7 days (cancellable), then hard-deletes via cascades,
+redacts email addresses (including pre-signup magic-link emails) and leaves
+audit events with `account_id = NULL`. One strictly-necessary cookie, no
+third-party requests from pages (system fonts, inline CSS), so no cookie
+banner is required. Raw competitor HTML is kept 30 days. A `/bot` page explains
+the crawler and how to opt out. A solicitor should review the texts before
+paid launch; `COMPANY.contact` must become a real mailbox on the production
+domain.
+
+## ADR-019: Server-rendered UI with a single inline stylesheet
+
+**Decision.** Keep Hono JSX server rendering; one design-system stylesheet
+(`web/theme.ts`) inlined per page; no client framework, no build step, no
+external assets. Public marketing pages (landing, pricing, legal) share the
+shell with the app. Rationale: fastest possible pages, zero third-party
+requests (privacy), trivially testable HTML, and the product's UI surface is
+small. Revisit if we need rich interactivity (charts, live updates).
+
 ## INCIDENT-001 (2026-09-06): vendor API keys exposed in an agent transcript
 
 **What happened.** While listing Railway variable *names*, an ad-hoc PowerShell

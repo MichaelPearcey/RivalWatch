@@ -11,7 +11,8 @@ import { PLANS } from "../plans.js";
 import * as A from "./actions.js";
 import { adminOverview } from "./admin.js";
 import { createDemoSite } from "./demo-site.js";
-import { AdminPage, BusinessPage, BusinessesPage, InsightDetailPage, LoginPage, PageDetailPage, SettingsPage } from "./views.js";
+import { crawlerPage, privacyPolicy, termsOfService } from "../legal.js";
+import { AdminPage, BusinessPage, BusinessesPage, ConsentPage, InsightDetailPage, LandingPage, LegalPage, LoginPage, PageDetailPage, PricingPage, SettingsPage } from "./views.js";
 
 type Env = { Variables: { principal: Principal | undefined } };
 type Ctx = Context<Env>;
@@ -44,10 +45,20 @@ export function createWebApp(app: App) {
   });
 
   const requireAuth = async (c: Ctx, next: Next) => {
-    if (c.get("principal")) return next();
-    if (c.req.path.startsWith("/api/")) return c.json({ error: "authentication required" }, 401);
-    return c.redirect(`/login?next=${encodeURIComponent(c.req.path)}`);
+    const p = c.get("principal");
+    if (!p) {
+      if (c.req.path.startsWith("/api/")) return c.json({ error: "authentication required" }, 401);
+      return c.redirect(`/login?next=${encodeURIComponent(c.req.path)}`);
+    }
+    // Browser sessions must have accepted the current legal documents (API keys inherit the owner's acceptance).
+    if (p.via === "session" && !c.req.path.startsWith("/api/") && !auth.hasCurrentConsent(p.user)) {
+      return c.redirect(`/legal/accept?next=${encodeURIComponent(c.req.path)}`);
+    }
+    return next();
   };
+  const ipOf = (c: Ctx) => c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? c.req.header("x-real-ip") ?? null;
+  const setSession = (c: Ctx, token: string) => setCookie(c, SESSION_COOKIE, token, { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: cfg.SESSION_DAYS * 86_400 });
+  const safeNext = (v: unknown) => (typeof v === "string" && /^\/(?!\/)[\w\-./?=&%]*$/.test(v) ? v : "/");
   const requireAdmin = async (c: Ctx, next: Next) => {
     const p = c.get("principal");
     if (!p) return c.req.path.startsWith("/api/") ? c.json({ error: "authentication required" }, 401) : c.redirect("/login");
@@ -72,18 +83,56 @@ export function createWebApp(app: App) {
     return c.json(p?.isAdmin ? { ...body, sources: app.sources.types(), config: redactConfig(cfg) } : body, db === "ok" ? 200 : 503);
   });
 
-  web.get("/login", (c) => (c.get("principal") ? c.redirect("/") : c.html(<LoginPage />)));
+  // Public marketing + legal pages
+  web.get("/", (c) => {
+    const p = c.get("principal");
+    if (!p) return c.html(<LandingPage />);
+    if (!auth.hasCurrentConsent(p.user)) return c.redirect("/legal/accept?next=%2F");
+    return c.html(<BusinessesPage principal={p} businesses={repo.listBusinesses(p.accountId)} account={repo.getAccount(p.accountId)!} flash={c.req.query("flash")} />);
+  });
+  web.get("/pricing", (c) => c.html(<PricingPage principal={c.get("principal")} />));
+  web.get("/privacy", (c) => c.html(<LegalPage title="Privacy Policy" markdown={privacyPolicy()} principal={c.get("principal")} />));
+  web.get("/terms", (c) => c.html(<LegalPage title="Terms of Service" markdown={termsOfService()} principal={c.get("principal")} />));
+  web.get("/bot", (c) => c.html(<LegalPage title="About our crawler" markdown={crawlerPage()} principal={c.get("principal")} />));
+  web.get("/legal/accept", (c) => {
+    const p = c.get("principal");
+    if (!p) return c.redirect("/login");
+    if (auth.hasCurrentConsent(p.user)) return c.redirect(safeNext(c.req.query("next")));
+    return c.html(<ConsentPage principal={p} next={c.req.query("next")} firstTime={repo.listConsents(p.user.id).length === 0} />);
+  });
+  web.post("/legal/accept", async (c) => {
+    const p = c.get("principal");
+    if (!p) return c.redirect("/login");
+    const form = await bodyOf(c);
+    if (form.terms !== "1" || form.privacy !== "1") return c.html(<ConsentPage principal={p} next={String(form.next ?? "/")} firstTime={repo.listConsents(p.user.id).length === 0} error="Please tick both boxes to continue." />, 400);
+    auth.acceptLegal(p.user, ipOf(c));
+    return c.redirect(safeNext(form.next));
+  });
+
+  web.get("/login", (c) => (c.get("principal") ? c.redirect("/") : c.html(<LoginPage mode={c.req.query("mode") === "signup" ? "signup" : "signin"} next={c.req.query("next")} />)));
   web.post("/auth/login", async (c) => {
     const body = await bodyOf(c);
     const email = z.string().email().max(254).parse(body.email);
-    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? c.req.header("x-real-ip") ?? null;
     try {
-      const r = await auth.requestLogin(email, ip);
+      const r = await auth.requestLogin(email, ipOf(c));
       if (isJson(c)) return c.json({ sent: r.sent, ...(r.devLink ? { dev_link: r.devLink } : {}), ...(r.error ? { error: r.error } : {}) }, r.sent ? 200 : 502);
-      if (!r.sent) return c.html(<LoginPage error={`We couldn't send your sign-in email. Email provider said: ${r.error ?? "unknown error"}`} />, 502);
+      if (!r.sent) return c.html(<LoginPage error={`We couldn't send your sign-in email. Email provider said: ${r.error ?? "unknown error"}`} email={email} />, 502);
       return c.html(<LoginPage sent email={email} devLink={r.devLink} />);
     } catch (err) {
-      if (err instanceof AuthError) return isJson(c) ? c.json({ error: err.message }, err.status) : c.html(<LoginPage error={err.message} />, err.status);
+      if (err instanceof AuthError) return isJson(c) ? c.json({ error: err.message }, err.status) : c.html(<LoginPage error={err.message} email={email} />, err.status);
+      throw err;
+    }
+  });
+  web.post("/auth/password", async (c) => {
+    const body = await bodyOf(c);
+    const { email, password } = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(128) }).parse(body);
+    try {
+      const { sessionToken } = await auth.loginWithPassword(email, password, ipOf(c));
+      setSession(c, sessionToken);
+      if (isJson(c)) return c.json({ ok: true });
+      return c.redirect(safeNext(body.next));
+    } catch (err) {
+      if (err instanceof AuthError) return isJson(c) ? c.json({ error: err.message }, err.status) : c.html(<LoginPage error={err.message} email={email} />, err.status);
       throw err;
     }
   });
@@ -91,18 +140,25 @@ export function createWebApp(app: App) {
     const token = c.req.query("token") ?? "";
     try {
       const { sessionToken } = auth.verify(token);
-      setCookie(c, SESSION_COOKIE, sessionToken, { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: cfg.SESSION_DAYS * 86_400 });
+      setSession(c, sessionToken);
       return c.redirect("/");
     } catch (err) {
       if (err instanceof AuthError) return c.html(<LoginPage error={err.message} />, err.status);
       throw err;
     }
   });
+  web.get("/auth/logout-get", (c) => {
+    auth.logout(getCookie(c, SESSION_COOKIE), c.get("principal"));
+    deleteCookie(c, SESSION_COOKIE, { path: "/" });
+    return c.redirect("/");
+  });
   // One-time operator bootstrap (see Auth.bootstrapAdmin). GET so it can be opened from a browser.
   web.get("/auth/bootstrap", (c) => {
     try {
-      const { sessionToken } = auth.bootstrapAdmin(c.req.query("token") ?? "", c.req.query("email") ?? "");
-      setCookie(c, SESSION_COOKIE, sessionToken, { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: cfg.SESSION_DAYS * 86_400 });
+      const { sessionToken, user } = auth.bootstrapAdmin(c.req.query("token") ?? "", c.req.query("email") ?? "");
+      setSession(c, sessionToken);
+      // The operator bootstrapping the system is deemed to accept the documents they publish.
+      auth.acceptLegal(user, ipOf(c));
       return c.redirect("/admin");
     } catch (err) {
       if (err instanceof AuthError) return c.html(<LoginPage error={err.message} />, err.status);
@@ -129,7 +185,23 @@ export function createWebApp(app: App) {
 
   api.get("/me", (c) => {
     const p = P(c);
-    return c.json({ user: { id: p.user.id, email: p.user.email, is_admin: p.isAdmin }, account: repo.getAccount(p.accountId), actor: p.actor, via: p.via });
+    return c.json({ user: { id: p.user.id, email: p.user.email, is_admin: p.isAdmin, has_password: !!p.user.password_hash }, account: repo.getAccount(p.accountId), actor: p.actor, via: p.via });
+  });
+  api.post("/me/password", async (c) => {
+    const p = P(c);
+    if (p.via !== "session") return c.json({ error: "passwords can only be changed from a browser session" }, 403);
+    const { password } = z.object({ password: z.string().max(128) }).parse(await c.req.json());
+    await auth.setPassword(p, password, getCookie(c, SESSION_COOKIE));
+    return c.body(null, 204);
+  });
+  api.get("/me/export", (c) => c.json(A.exportAccountData(app, P(c))));
+  api.post("/account/delete", (c) => {
+    if (P(c).via !== "session") return c.json({ error: "account deletion can only be requested from a browser session" }, 403);
+    return c.json(A.requestAccountDeletion(app, P(c)), 202);
+  });
+  api.post("/account/delete/cancel", (c) => {
+    A.cancelAccountDeletion(app, P(c));
+    return c.body(null, 204);
   });
 
   api.get("/businesses", (c) => c.json(repo.listBusinesses(P(c).accountId)));
@@ -328,10 +400,6 @@ export function createWebApp(app: App) {
     }
   };
 
-  ui.get("/", (c) => {
-    const p = P(c);
-    return c.html(<BusinessesPage principal={p} businesses={repo.listBusinesses(p.accountId)} account={repo.getAccount(p.accountId)!} flash={c.req.query("flash")} />);
-  });
   ui.post("/b", async (c) => {
     const b = A.createBusiness(app, P(c), A.BusinessInput.parse(await bodyOf(c)));
     return c.redirect(`/b/${b.id}`);
@@ -467,6 +535,38 @@ export function createWebApp(app: App) {
     auth.revokeApiKey(P(c), id(c));
     return c.redirect("/settings");
   });
+  ui.post("/settings/password", async (c) =>
+    tryUi(c, "/settings", async () => {
+      const form = await bodyOf(c);
+      await auth.setPassword(P(c), String(form.password ?? ""), getCookie(c, SESSION_COOKIE));
+      return "Password saved. Other sessions have been signed out.";
+    }),
+  );
+  ui.post("/settings/password/remove", (c) =>
+    tryUi(c, "/settings", () => {
+      auth.removePassword(P(c));
+      return "Password removed. You can still sign in with an email link.";
+    }),
+  );
+  ui.get("/settings/export", (c) => {
+    const data = A.exportAccountData(app, P(c));
+    c.header("content-disposition", `attachment; filename="rivalwatch-export-${new Date().toISOString().slice(0, 10)}.json"`);
+    return c.json(data);
+  });
+  ui.post("/settings/delete", async (c) =>
+    tryUi(c, "/settings", async () => {
+      const form = await bodyOf(c);
+      if (form.confirm !== "1") throw new A.ActionError(400, "Please tick the confirmation box.");
+      const r = A.requestAccountDeletion(app, P(c));
+      return `Deletion scheduled for ${r.delete_after.slice(0, 16).replace("T", " ")} UTC. You can cancel until then.`;
+    }),
+  );
+  ui.post("/settings/delete/cancel", (c) =>
+    tryUi(c, "/settings", () => {
+      A.cancelAccountDeletion(app, P(c));
+      return "Deletion cancelled. Remember to resume any paused pages.";
+    }),
+  );
 
   ui.get("/admin", requireAdmin, (c) => c.html(<AdminPage principal={P(c)} o={adminOverview(app)} flash={c.req.query("flash")} />));
   ui.post("/admin/accounts/:id/plan", requireAdmin, async (c) => {

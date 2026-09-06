@@ -14,6 +14,8 @@ export interface Account {
   name: string;
   plan: string;
   created_at: string;
+  deletion_requested_at: string | null;
+  delete_after: string | null;
 }
 
 export interface User {
@@ -24,6 +26,19 @@ export interface User {
   is_admin: number;
   created_at: string;
   last_login_at: string | null;
+  password_hash: string | null;
+  password_set_at: string | null;
+  failed_logins: number;
+  locked_until: string | null;
+}
+
+export interface Consent {
+  id: number;
+  user_id: number;
+  document: string;
+  version: string;
+  accepted_at: string;
+  ip: string | null;
 }
 
 export interface Business {
@@ -220,7 +235,50 @@ export class Repo {
   }
   /** Admin is granted (never silently revoked) here; revocation is an explicit operator action. */
   touchUserLogin(id: number, grantAdmin: boolean): void {
-    this.db.prepare(`UPDATE users SET last_login_at = ${NOW}, is_admin = CASE WHEN ? THEN 1 ELSE is_admin END WHERE id = ?`).run(grantAdmin ? 1 : 0, id);
+    this.db.prepare(`UPDATE users SET last_login_at = ${NOW}, is_admin = CASE WHEN ? THEN 1 ELSE is_admin END, failed_logins = 0, locked_until = NULL WHERE id = ?`).run(grantAdmin ? 1 : 0, id);
+  }
+  setUserPassword(id: number, hash: string | null): void {
+    this.db.prepare(`UPDATE users SET password_hash = ?, password_set_at = CASE WHEN ? IS NULL THEN NULL ELSE ${NOW} END WHERE id = ?`).run(hash, hash, id);
+  }
+  recordFailedLogin(id: number, lockAfter: number, lockMinutes: number): { failed: number; locked: boolean } {
+    const row = this.db
+      .prepare(
+        `UPDATE users SET failed_logins = failed_logins + 1,
+           locked_until = CASE WHEN failed_logins + 1 >= ? THEN strftime('%Y-%m-%dT%H:%M:%fZ','now', '+' || ? || ' minutes') ELSE locked_until END
+         WHERE id = ? RETURNING failed_logins, locked_until`,
+      )
+      .get(lockAfter, lockMinutes, id) as { failed_logins: number; locked_until: string | null };
+    return { failed: row.failed_logins, locked: row.locked_until !== null && row.locked_until > new Date().toISOString() };
+  }
+  deleteSessionsForUser(userId: number, exceptTokenHash?: string): number {
+    return Number(exceptTokenHash ? this.db.prepare("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?").run(userId, exceptTokenHash).changes : this.db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId).changes);
+  }
+
+  // Consent & deletion
+  recordConsent(userId: number, document: string, version: string, ip: string | null): void {
+    this.db.prepare("INSERT INTO consents (user_id, document, version, ip) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, document, version) DO NOTHING").run(userId, document, version, ip);
+  }
+  hasConsent(userId: number, document: string, version: string): boolean {
+    return this.count("SELECT COUNT(*) c FROM consents WHERE user_id = ? AND document = ? AND version = ?", userId, document, version) > 0;
+  }
+  listConsents(userId: number): Consent[] {
+    return this.db.prepare("SELECT * FROM consents WHERE user_id = ? ORDER BY accepted_at").all(userId) as unknown as Consent[];
+  }
+  setAccountDeletion(accountId: number, deleteAfter: string | null): void {
+    this.db.prepare(`UPDATE accounts SET deletion_requested_at = CASE WHEN ? IS NULL THEN NULL ELSE ${NOW} END, delete_after = ? WHERE id = ?`).run(deleteAfter, deleteAfter, accountId);
+  }
+  accountsDueForDeletion(now: string): Account[] {
+    return this.db.prepare("SELECT * FROM accounts WHERE delete_after IS NOT NULL AND delete_after <= ?").all(now) as unknown as Account[];
+  }
+  deleteAccount(accountId: number): void {
+    // ON DELETE CASCADE removes users, businesses, competitors, pages, snapshots, changes, insights, feedback, api keys, sessions;
+    // events keep account_id = NULL (SET NULL) so the audit trail survives without personal data.
+    // Emails sent before signup (magic links) carry no account_id, so redact by address too.
+    for (const u of this.listUsers(accountId)) {
+      this.db.prepare("UPDATE emails SET to_address = '[deleted]', body_text = NULL WHERE account_id = ? OR to_address = ?").run(accountId, u.email);
+      this.db.prepare("DELETE FROM login_tokens WHERE email = ?").run(u.email);
+    }
+    this.db.prepare("DELETE FROM accounts WHERE id = ?").run(accountId);
   }
 
   // Businesses

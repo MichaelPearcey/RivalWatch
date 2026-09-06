@@ -35,8 +35,8 @@ export interface Session {
   email: string;
 }
 
-/** Full magic-link flow through the HTTP layer; returns the session cookie. */
-export async function login(web: Hono, email: string): Promise<Session> {
+/** Full magic-link flow through the HTTP layer (plus legal acceptance by default); returns the session cookie. */
+export async function login(web: Hono, email: string, acceptLegal = true): Promise<Session> {
   const req = await web.request(`${BASE}/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) });
   const { dev_link } = (await req.json()) as { dev_link: string };
   if (!dev_link) throw new Error("no dev_link returned; is the log email provider active?");
@@ -44,6 +44,10 @@ export async function login(web: Hono, email: string): Promise<Session> {
   const setCookie = verify.headers.get("set-cookie") ?? "";
   const cookie = setCookie.split(";")[0] ?? "";
   if (!cookie.startsWith("rw_session=")) throw new Error(`login failed: ${verify.status} ${setCookie}`);
+  if (acceptLegal) {
+    const r = await web.request(`${BASE}/legal/accept`, { method: "POST", headers: { cookie, "content-type": "application/x-www-form-urlencoded" }, body: "terms=1&privacy=1&next=%2F" });
+    if (r.status !== 302) throw new Error(`consent failed: ${r.status}`);
+  }
   return { cookie, email };
 }
 
