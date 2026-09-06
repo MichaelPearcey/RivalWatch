@@ -101,8 +101,8 @@ const ThemeToggle: FC<{ t: Translate }> = ({ t }) => (
 
 /** Plain GET form so it works without JS; the server sets the cookie and redirects back. */
 const LangPicker: FC<{ t: Translate }> = ({ t }) => (
-  <form method="get" action="/lang" class="lang" style="display:inline">
-    <select name="lang" aria-label={t("nav.language")} onchange="this.form.submit()" class="theme" style="width:auto;padding:0 .5rem;font-size:.8rem">
+  <form method="get" action="/lang" class="lang">
+    <select name="lang" aria-label={t("nav.language")} onchange="this.form.submit()">
       {LOCALES.map((l) => (
         <option value={l} selected={l === t.locale}>
           {translator(l)("lang.name")}
