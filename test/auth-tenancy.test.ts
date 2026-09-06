@@ -55,6 +55,7 @@ describe("magic-link auth", () => {
     expect(ui.location).toContain("/login?next=%2Fsettings");
     const landing = await html(t.web, "/");
     expect(landing.status).toBe(200);
+    expect(landing.text.startsWith("<!DOCTYPE html>")).toBe(true); // standards mode, not quirks mode
     expect(landing.text).toContain("Know the moment your");
     expect(landing.text).toContain("rwToggleTheme");
     expect(landing.text).not.toMatch(/https?:\/\/(fonts|cdn|www\.googletagmanager)/); // no third-party assets

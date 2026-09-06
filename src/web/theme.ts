@@ -45,7 +45,7 @@ table{width:100%;border-collapse:collapse;font-size:.95rem}th,td{text-align:left
 .nav a.link{color:var(--ink-2);font-weight:500}.nav a.link:hover{color:var(--ink);text-decoration:none}.nav .right{margin-left:auto;display:flex;gap:.75rem;align-items:center}
 .theme{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 .theme:hover{background:var(--surface-2)}.theme svg{width:18px;height:18px}[data-theme="light"] .theme .moon{display:none}:root:not([data-theme="light"]) .theme .sun{display:none}
-.lang{display:inline-flex;align-items:center}
+.lang{display:inline-flex;align-items:center;margin:0;vertical-align:middle}.nav .right form{margin:0;display:inline-flex;align-items:center}
 .lang select{appearance:none;-webkit-appearance:none;height:36px;padding:0 1.9rem 0 .7rem;border-radius:10px;border:1px solid var(--line);background:var(--bg-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237f8aa3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right .55rem center/14px;color:var(--ink);font:inherit;font-size:.85rem;font-weight:500;cursor:pointer;line-height:34px}
 .lang select:hover{background-color:var(--surface-2)}.lang select:focus{outline:2px solid rgba(110,168,255,.35)}
 /* Native option lists ignore translucency; give them solid, readable colours in both themes. */

@@ -18,7 +18,9 @@ const EN = translator("en");
 // ---------------------------------------------------------------------------
 
 export const Layout: FC<{ title: string; children?: unknown; flash?: string | undefined; principal?: Principal | undefined; description?: string; t?: Translate }> = ({ title, children, flash, principal, description, t = EN }) => (
-  <html lang={t.locale}>
+  <>
+    {raw("<!DOCTYPE html>")}
+    <html lang={t.locale}>
     <head>
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -83,6 +85,7 @@ export const Layout: FC<{ title: string; children?: unknown; flash?: string | un
       <script>{raw(JS)}</script>
     </body>
   </html>
+  </>
 );
 
 const THEME_BOOT = `try{if(localStorage.getItem('rw-theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}`;
