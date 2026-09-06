@@ -69,6 +69,8 @@ const ConfigSchema = z.object({
   DIGEST_WEEKDAY: z.coerce.number().int().min(1).max(7).default(1),
   DIGEST_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(8),
 
+  /** One-time operator sign-in for fresh deployments without email. >= 16 chars. Remove after first login. */
+  BOOTSTRAP_ADMIN_TOKEN: z.string().optional(),
   SESSION_DAYS: z.coerce.number().int().positive().default(30),
   MAGIC_LINK_MINUTES: z.coerce.number().int().positive().default(15),
 
@@ -80,7 +82,10 @@ export type Config = z.infer<typeof ConfigSchema> & { HOST: string; isProduction
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (env === process.env) loadDotenv();
   const parsed = ConfigSchema.safeParse(env);
-  if (!parsed.success) throw new Error(`Invalid configuration: ${parsed.error.message}`);
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+    throw new ConfigError(`Invalid configuration: ${issues}`);
+  }
   const c = parsed.data;
   const isProduction = c.NODE_ENV === "production";
   const cfg: Config = {
@@ -90,14 +95,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     HOST: c.HOST ?? (isProduction ? "0.0.0.0" : "127.0.0.1"),
     publicUrl: (c.PUBLIC_URL ?? `http://127.0.0.1:${c.PORT}`).replace(/\/$/, ""),
   };
-  if (cfg.AI_PROVIDER === "anthropic" && !cfg.ANTHROPIC_API_KEY) throw new Error("AI_PROVIDER=anthropic requires ANTHROPIC_API_KEY");
-  if (cfg.EMAIL_PROVIDER === "resend" && !cfg.RESEND_API_KEY) throw new Error("EMAIL_PROVIDER=resend requires RESEND_API_KEY");
-  if (isProduction && !c.PUBLIC_URL) throw new Error("PUBLIC_URL is required in production (used in magic links)");
-  if (isProduction && cfg.DEMO_SITE_ENABLED) throw new Error("DEMO_SITE_ENABLED must be false in production");
+  if (cfg.AI_PROVIDER === "anthropic" && !cfg.ANTHROPIC_API_KEY) throw new ConfigError("AI_PROVIDER=anthropic requires ANTHROPIC_API_KEY");
+  if (cfg.EMAIL_PROVIDER === "resend" && !cfg.RESEND_API_KEY) throw new ConfigError("EMAIL_PROVIDER=resend requires RESEND_API_KEY");
+  if (isProduction && !c.PUBLIC_URL) throw new ConfigError("PUBLIC_URL is required in production (used in magic links)");
+  if (isProduction && cfg.DEMO_SITE_ENABLED) throw new ConfigError("DEMO_SITE_ENABLED must be false in production");
+  if (cfg.BOOTSTRAP_ADMIN_TOKEN && cfg.BOOTSTRAP_ADMIN_TOKEN.length < 16) throw new ConfigError("BOOTSTRAP_ADMIN_TOKEN must be at least 16 characters");
   return cfg;
 }
 
-const SECRET_KEYS = ["ANTHROPIC_API_KEY", "RESEND_API_KEY"] as const;
+/** Thrown for misconfiguration; the entrypoint prints these without a stack trace. */
+export class ConfigError extends Error {
+  readonly name = "ConfigError";
+}
+
+const SECRET_KEYS = ["ANTHROPIC_API_KEY", "RESEND_API_KEY", "BOOTSTRAP_ADMIN_TOKEN"] as const;
 
 /** Config with secrets removed, safe to log or expose on /health. */
 export function redactConfig(cfg: Config): Record<string, unknown> {

@@ -1,10 +1,20 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
-import { loadConfig, redactConfig } from "./config.js";
+import { ConfigError, loadConfig, redactConfig } from "./config.js";
 import { log } from "./logger.js";
 import { createWebApp } from "./web/app.js";
 
-const cfg = loadConfig();
+let cfg;
+try {
+  cfg = loadConfig();
+} catch (err) {
+  if (err instanceof ConfigError) {
+    // Misconfiguration is an operator problem, not a bug: say so plainly and exit without a stack trace.
+    process.stderr.write(`\nRivalWatch cannot start: ${err.message}\nSee docs/07-deployment.md for the required environment variables.\n\n`);
+    process.exit(78); // EX_CONFIG
+  }
+  throw err;
+}
 const app = createApp(cfg);
 const web = createWebApp(app);
 

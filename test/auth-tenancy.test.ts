@@ -50,6 +50,30 @@ describe("magic-link auth", () => {
     expect((await html(t.web, "/admin", admin)).status).toBe(200);
   });
 
+  it("bootstrap sign-in works once for an admin email when BOOTSTRAP_ADMIN_TOKEN is set", async () => {
+    t.app.close();
+    t = testApp({ BOOTSTRAP_ADMIN_TOKEN: "correct-horse-battery-staple" });
+    const url = (token: string, email: string) => `${t.base}/auth/bootstrap?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
+    // wrong token / non-admin email are rejected
+    expect((await t.web.request(url("wrong-token-wrong-token", "admin@rivalwatch.test"))).status).toBe(403);
+    expect((await t.web.request(url("correct-horse-battery-staple", "someone@else.test"))).status).toBe(403);
+    // correct -> session cookie, admin
+    const ok = await t.web.request(url("correct-horse-battery-staple", "admin@rivalwatch.test"));
+    expect(ok.status).toBe(302);
+    expect(ok.headers.get("location")).toBe("/admin");
+    const cookie = (ok.headers.get("set-cookie") ?? "").split(";")[0]!;
+    const me = await json<{ user: { is_admin: boolean } }>(t.web, "/api/me", { session: { cookie, email: "admin@rivalwatch.test" } });
+    expect(me.body.user.is_admin).toBe(true);
+    // once an admin has logged in, bootstrap is closed for good
+    expect((await t.web.request(url("correct-horse-battery-staple", "admin@rivalwatch.test"))).status).toBe(403);
+    const audit = t.app.events.list({ type: "agent.action" })[0]!;
+    expect(audit).toMatchObject({ risk_level: "high", requested_by: "operator", approved_by: "env:BOOTSTRAP_ADMIN_TOKEN" });
+  });
+
+  it("bootstrap is unavailable when the variable is not set", async () => {
+    expect((await t.web.request(`${t.base}/auth/bootstrap?token=x&email=admin@rivalwatch.test`)).status).toBe(403);
+  });
+
   it("logout invalidates the session", async () => {
     const s = await login(t.web, "x@y.co");
     await t.web.request(`${t.base}/auth/logout`, { method: "POST", headers: { cookie: s.cookie } });

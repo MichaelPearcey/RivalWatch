@@ -26,11 +26,19 @@ instance; running two would double-fetch. (`railway.json` pins `numReplicas: 1`.
    `NODE_ENV=production`, `PUBLIC_URL=https://<domain>`, `ADMIN_EMAILS=<you>`,
    `DATABASE_PATH=/data/rivalwatch.db`.
 5. Redeploy. Check `https://<domain>/health` returns `{"status":"ok"}`.
-6. Sign in at `/login` with an admin email. Until Resend is configured the app
-   uses the `log` email provider: the magic link is visible in the service logs
-   (`email (log provider)` line is metadata only; the link itself is in the
-   `emails` table). Simplest: temporarily set `EMAIL_PROVIDER=log` and run
-   `railway run npm run cli -- login-link you@example.com` — or configure Resend first.
+6. **First sign-in without email.** Until Resend is configured no magic link
+   can be delivered, so use the one-time bootstrap:
+   - add variable `BOOTSTRAP_ADMIN_TOKEN=<random string, 16+ chars>` and deploy;
+   - open `https://<domain>/auth/bootstrap?token=<that string>&email=<an ADMIN_EMAILS address>`;
+   - you land on `/admin` signed in. The route then locks itself (it only works
+     while no admin has ever logged in) and records a high-risk audit event.
+   - **Delete the `BOOTSTRAP_ADMIN_TOKEN` variable** afterwards.
+   Later, once Resend is live, everyone (including you) signs in at `/login`.
+
+> **Railway UI gotcha:** variable edits are *staged*. After editing, click the
+> purple **Deploy / Apply changes** button at the top of the service, otherwise
+> the running container keeps the old environment and the app exits with
+> `RivalWatch cannot start: PUBLIC_URL is required in production`.
 
 ## Environment variables
 
@@ -49,6 +57,7 @@ instance; running two would double-fetch. (`railway.json` pins `numReplicas: 1`.
 | `EMAIL_PROVIDER` | `resend` | no | `log` until the domain is verified |
 | `RESEND_API_KEY` | `re_…` | **yes** | Create at resend.com; restrict to "sending access" |
 | `EMAIL_FROM` | `RivalWatch <digest@yourdomain>` | no | Domain must be verified in Resend (DKIM + SPF) |
+| `BOOTSTRAP_ADMIN_TOKEN` | random, 16+ chars, **temporary** | **yes** | Enables `/auth/bootstrap` for the very first admin sign-in; remove afterwards |
 | `CONFIRM_DELAY_MINUTES` | `60` | no | |
 | `DIGEST_WEEKDAY` / `DIGEST_HOUR_UTC` | `1` / `8` | no | Monday 08:00 UTC |
 | `FETCH_USER_AGENT` | include a real contact URL | no | Site owners must be able to reach us |

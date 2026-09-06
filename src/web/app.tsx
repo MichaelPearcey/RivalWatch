@@ -96,6 +96,17 @@ export function createWebApp(app: App) {
       throw err;
     }
   });
+  // One-time operator bootstrap (see Auth.bootstrapAdmin). GET so it can be opened from a browser.
+  web.get("/auth/bootstrap", (c) => {
+    try {
+      const { sessionToken } = auth.bootstrapAdmin(c.req.query("token") ?? "", c.req.query("email") ?? "");
+      setCookie(c, SESSION_COOKIE, sessionToken, { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: cfg.SESSION_DAYS * 86_400 });
+      return c.redirect("/admin");
+    } catch (err) {
+      if (err instanceof AuthError) return c.html(<LoginPage error={err.message} />, err.status);
+      throw err;
+    }
+  });
   web.post("/auth/logout", (c) => {
     auth.logout(getCookie(c, SESSION_COOKIE), c.get("principal"));
     deleteCookie(c, SESSION_COOKIE, { path: "/" });

@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Config } from "./config.js";
 import type { Repo, User } from "./db/repo.js";
 import type { Events } from "./events.js";
@@ -31,6 +31,12 @@ export function hashToken(token: string): string {
 
 export function newToken(bytes = 32): string {
   return randomBytes(bytes).toString("base64url");
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const ha = createHash("sha256").update(a).digest();
+  const hb = createHash("sha256").update(b).digest();
+  return timingSafeEqual(ha, hb);
 }
 
 /**
@@ -92,11 +98,35 @@ export class Auth {
       this.events.record({ type: "user.login_failed", result: "denied", payload: { reason: "invalid_or_expired" } });
       throw new AuthError(401, "This sign-in link is invalid or has expired.");
     }
-    let user = this.repo.getUserByEmail(consumed.email);
+    return this.establishSession(consumed.email, "magic_link");
+  }
+
+  /**
+   * One-time operator bootstrap for a fresh deployment where email is not yet
+   * configured. Requires BOOTSTRAP_ADMIN_TOKEN to be set, the email to be in
+   * ADMIN_EMAILS, and works only while no admin has ever signed in. Remove the
+   * variable afterwards.
+   */
+  bootstrapAdmin(token: string, emailRaw: string): { user: User; sessionToken: string; created: boolean } {
+    const email = emailRaw.trim().toLowerCase();
+    const expected = this.cfg.BOOTSTRAP_ADMIN_TOKEN;
+    const anyAdminLoggedIn = this.repo.count("SELECT COUNT(*) c FROM users WHERE is_admin = 1 AND last_login_at IS NOT NULL") > 0;
+    const ok = !!expected && expected.length >= 16 && safeEqual(token, expected) && this.isAdminEmail(email) && !anyAdminLoggedIn;
+    if (!ok) {
+      this.events.record({ type: "user.login_failed", result: "denied", riskLevel: "high", payload: { reason: "bootstrap_rejected", email: maskEmail(email), configured: !!expected, admin_email: this.isAdminEmail(email), already_bootstrapped: anyAdminLoggedIn } });
+      throw new AuthError(403, "Bootstrap sign-in is not available.");
+    }
+    const result = this.establishSession(email, "bootstrap");
+    this.events.record({ type: "agent.action", actor: `user:${result.user.id}`, accountId: result.user.account_id, entity: { type: "user", id: result.user.id }, riskLevel: "high", requestedBy: "operator", approvedBy: "env:BOOTSTRAP_ADMIN_TOKEN", payload: { action: "bootstrap_admin_login" } });
+    return result;
+  }
+
+  private establishSession(email: string, method: "magic_link" | "bootstrap"): { user: User; sessionToken: string; created: boolean } {
+    let user = this.repo.getUserByEmail(email);
     let created = false;
     if (!user) {
-      const account = this.repo.createAccount({ name: consumed.email.split("@")[0] ?? "My account" });
-      user = this.repo.createUser({ account_id: account.id, email: consumed.email, role: "owner", is_admin: this.isAdminEmail(consumed.email) });
+      const account = this.repo.createAccount({ name: email.split("@")[0] ?? "My account" });
+      user = this.repo.createUser({ account_id: account.id, email, role: "owner", is_admin: this.isAdminEmail(email) });
       created = true;
       this.events.record({ type: "account.created", actor: `user:${user.id}`, accountId: account.id, entity: { type: "account", id: account.id }, payload: { plan: account.plan } });
       this.events.record({ type: "user.signup", actor: `user:${user.id}`, accountId: account.id, entity: { type: "user", id: user.id }, payload: { email: maskEmail(user.email) } });
@@ -105,7 +135,7 @@ export class Auth {
     user = this.repo.getUser(user.id)!;
     const sessionToken = newToken();
     this.repo.createSession(hashToken(sessionToken), user.id, new Date(Date.now() + this.cfg.SESSION_DAYS * 86_400_000).toISOString());
-    this.events.record({ type: "user.login", actor: `user:${user.id}`, accountId: user.account_id, entity: { type: "user", id: user.id }, payload: { created } });
+    this.events.record({ type: "user.login", actor: `user:${user.id}`, accountId: user.account_id, entity: { type: "user", id: user.id }, payload: { created, method } });
     return { user, sessionToken, created };
   }
 
