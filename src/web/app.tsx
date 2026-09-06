@@ -256,6 +256,10 @@ export function createWebApp(app: App) {
       }),
     );
   });
+  api.post("/admin/accounts/:id/plan", requireAdmin, async (c) => {
+    const { plan, reason } = z.object({ plan: z.string(), reason: z.string().max(500).optional() }).parse(await c.req.json());
+    return c.json(A.setAccountPlan(app, P(c), id(c), plan, reason));
+  });
   api.post("/admin/scheduler/tick", requireAdmin, async (c) => c.json({ processed: await app.scheduler.tick() }));
   api.post("/admin/digests/run", requireAdmin, async (c) => c.json({ sent: await app.digests.runDue() }));
 
@@ -414,7 +418,15 @@ export function createWebApp(app: App) {
     return c.redirect("/settings");
   });
 
-  ui.get("/admin", requireAdmin, (c) => c.html(<AdminPage principal={P(c)} o={adminOverview(app)} />));
+  ui.get("/admin", requireAdmin, (c) => c.html(<AdminPage principal={P(c)} o={adminOverview(app)} flash={c.req.query("flash")} />));
+  ui.post("/admin/accounts/:id/plan", requireAdmin, async (c) => {
+    const aid = id(c);
+    return tryUi(c, "/admin", async () => {
+      const form = await bodyOf(c);
+      const r = A.setAccountPlan(app, P(c), aid, String(form.plan), form.reason ? String(form.reason) : undefined);
+      return `Account #${r.account_id} is now on the ${PLANS[r.plan]!.name} plan.`;
+    });
+  });
 
   web.route("/", ui);
   return web;

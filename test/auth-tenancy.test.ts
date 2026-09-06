@@ -159,6 +159,22 @@ describe("tenant isolation", () => {
     }
   });
 
+  it("admins can change an account's plan; it is audited as a high-risk approved action", async () => {
+    const admin = await login(t.web, "admin@rivalwatch.test");
+    const user = await login(t.web, "cust@a.co");
+    const acct = t.app.repo.getUserByEmail("cust@a.co")!.account_id;
+    expect((await json(t.web, `/api/admin/accounts/${acct}/plan`, { method: "POST", session: user, body: JSON.stringify({ plan: "plus" }) })).status).toBe(403);
+    expect((await json(t.web, `/api/admin/accounts/${acct}/plan`, { method: "POST", session: admin, body: JSON.stringify({ plan: "gold" }) })).status).toBe(400);
+    const ok = await json<{ plan: string }>(t.web, `/api/admin/accounts/${acct}/plan`, { method: "POST", session: admin, body: JSON.stringify({ plan: "plus", reason: "beta tester" }) });
+    expect(ok.status).toBe(200);
+    expect(t.app.repo.getAccount(acct)!.plan).toBe("plus");
+    const ev = t.app.events.list({ type: "account.plan_changed" })[0]!;
+    expect(ev).toMatchObject({ risk_level: "high", result: "ok", account_id: acct });
+    expect(ev.approved_by).toMatch(/^user:\d+$/);
+    expect(JSON.parse(ev.payload)).toMatchObject({ from: "free", to: "plus", reason: "beta tester" });
+    expect((await json<{ account: { plan: string } }>(t.web, "/api/me", { session: user })).body.account.plan).toBe("plus");
+  });
+
   it("plan limits are enforced per account from plan data", async () => {
     const s = await login(t.web, "free@a.co");
     const b = (await json<{ id: number }>(t.web, "/api/businesses", { method: "POST", session: s, body: JSON.stringify({ name: "Tiny" }) })).body;

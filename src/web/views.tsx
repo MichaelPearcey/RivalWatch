@@ -2,7 +2,7 @@ import type { FC } from "hono/jsx";
 import type { Principal } from "../auth.js";
 import type { Account, ApiKey, Business, Change, Competitor, EmailRow, Insight, InsightFeedback, MonitoredPage, PageSuggestion, Snapshot, User } from "../db/repo.js";
 import type { EventRow } from "../events.js";
-import { getPlan } from "../plans.js";
+import { PLANS, getPlan } from "../plans.js";
 
 const css = `
 :root{--bg:#f7f7f5;--fg:#1c1c1c;--muted:#666;--card:#fff;--line:#e3e3df;--accent:#0b5fff;--warn:#b45309;--ok:#15803d;--bad:#b91c1c}
@@ -552,8 +552,8 @@ export interface AdminOverview {
   recent: EventRow[];
 }
 
-export const AdminPage: FC<{ principal: Principal; o: AdminOverview }> = ({ principal, o }) => (
-  <Layout title="Admin" principal={principal}>
+export const AdminPage: FC<{ principal: Principal; o: AdminOverview; flash?: string | undefined }> = ({ principal, o, flash }) => (
+  <Layout title="Admin" principal={principal} flash={flash}>
     <h1>Owner dashboard</h1>
     <div class="card">
       {Object.entries(o.totals).map(([k, v]) => (
@@ -642,6 +642,7 @@ export const AdminPage: FC<{ principal: Principal; o: AdminOverview }> = ({ prin
     </table>
 
     <h2>Users ({o.users.length})</h2>
+    <p class="muted">Changing a plan is a tier-3 (human) action; it is recorded with you as approver. Billing will drive this automatically later.</p>
     <table>
       <thead>
         <tr>
@@ -657,8 +658,23 @@ export const AdminPage: FC<{ principal: Principal; o: AdminOverview }> = ({ prin
         {o.users.map((u) => (
           <tr>
             <td>{u.email}</td>
-            <td>{u.account_name}</td>
-            <td>{u.account_plan}</td>
+            <td>
+              {u.account_name} <span class="muted">#{u.account_id}</span>
+            </td>
+            <td>
+              <form method="post" action={`/admin/accounts/${u.account_id}/plan`} class="inline" style="gap:.3rem">
+                <select name="plan">
+                  {Object.values(PLANS).map((p) => (
+                    <option value={p.id} selected={p.id === u.account_plan}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+                <button class="tiny secondary" type="submit">
+                  Set
+                </button>
+              </form>
+            </td>
             <td>{u.is_admin ? "yes" : ""}</td>
             <td class="muted">{fmtDate(u.created_at)}</td>
             <td class="muted">{fmtDate(u.last_login_at)}</td>

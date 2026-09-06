@@ -4,7 +4,7 @@ import type { Principal } from "../auth.js";
 import { FEEDBACK_VERDICTS, PAGE_KINDS, type Business, type Competitor, type Insight, type InsightFeedback, type MonitoredPage, type PageSuggestion } from "../db/repo.js";
 import { errorFields } from "../logger.js";
 import type { ProcessOutcome } from "../monitor/pipeline.js";
-import { getPlan } from "../plans.js";
+import { PLANS, getPlan } from "../plans.js";
 import { discoverPages } from "../sources/website/discover.js";
 
 /**
@@ -56,6 +56,31 @@ export const FeedbackInput = z.object({
 
 function notFound(what: string): never {
   throw new ActionError(404, `${what} not found`);
+}
+
+// ---------- Operator (admin) actions ----------
+
+/**
+ * Tier-3 action: changing what a customer pays for. Only admins may call this,
+ * and the audit event records who approved it. Billing will later drive this
+ * automatically via the same function.
+ */
+export function setAccountPlan(app: App, admin: Principal, accountId: number, planId: string, reason?: string): { account_id: number; plan: string } {
+  if (!admin.isAdmin) throw new ActionError(403, "admin only");
+  if (!(planId in PLANS)) throw new ActionError(400, `unknown plan "${planId}"; valid: ${Object.keys(PLANS).join(", ")}`);
+  const account = app.repo.getAccount(accountId) ?? notFound("account");
+  app.repo.updateAccountPlan(accountId, planId);
+  app.events.record({
+    type: "account.plan_changed",
+    actor: admin.actor,
+    accountId,
+    entity: { type: "account", id: accountId },
+    riskLevel: "high",
+    requestedBy: admin.actor,
+    approvedBy: admin.actor,
+    payload: { from: account.plan, to: planId, ...(reason ? { reason } : {}) },
+  });
+  return { account_id: accountId, plan: planId };
 }
 
 // ---------- Businesses ----------

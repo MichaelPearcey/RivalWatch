@@ -12,6 +12,7 @@ import { log } from "./logger.js";
 export type EventType =
   // accounts / auth
   | "account.created"
+  | "account.plan_changed"
   | "user.signup"
   | "user.login_requested"
   | "user.login"
