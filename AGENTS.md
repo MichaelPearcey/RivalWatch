@@ -1,6 +1,28 @@
 # AGENTS.md - working notes for AI agents and engineers
 
-Read `README.md` and `docs/` first. This file is operational guidance.
+Read `docs/HANDOFF.md` first (standing brief: what exists, who it is for, open
+threads), then `README.md` and `docs/`. This file is operational guidance.
+
+## People and language
+
+The owner (Michael) and his partner Maria (Ukraine) are both admins and may
+start sessions or talk to the founder assistant. **They may write in Ukrainian,
+Russian or English - answer in the language they used.** Product UI strings live
+in `src/i18n/*.ts`; every locale must keep every key (compile-time enforced).
+
+## Cloud Devin sessions (app.devin.ai)
+
+- Fresh VM: `npm ci && npm run check`. Tests are offline (in-memory SQLite, no
+  Docker, no secrets). Without `ANTHROPIC_API_KEY` the app uses the heuristic
+  analyser - fine for development.
+- **Open pull requests; never push to `main`.** CI runs `npm run check`; a human
+  merges; Railway deploys `main` automatically. Keep PRs small and single-purpose,
+  with a plain-language description (the reviewer may not be an engineer).
+- If shared-memory credentials are absent, ask the owner rather than guessing
+  what was requested. Do not add secrets to the repo, to memory notes, or to PRs.
+- Consequential actions (spending, vendors, plan changes, deleting data,
+  infrastructure) need explicit owner approval - propose in the PR description
+  or a memory `request`, do not act.
 
 ## Environment quirks (founding machine, Windows)
 
