@@ -4,10 +4,7 @@ import { ConfigError, loadConfig, redactConfig } from "./config.js";
 import { log } from "./logger.js";
 import { createWebApp } from "./web/app.js";
 
-let cfg;
-try {
-  cfg = loadConfig();
-} catch (err) {
+function fatalConfig(err: unknown): never {
   if (err instanceof ConfigError) {
     // Misconfiguration is an operator problem, not a bug: say so plainly and exit without a stack trace.
     process.stderr.write(`\nRivalWatch cannot start: ${err.message}\nSee docs/07-deployment.md for the required environment variables.\n\n`);
@@ -15,7 +12,15 @@ try {
   }
   throw err;
 }
-const app = createApp(cfg);
+
+let cfg: ReturnType<typeof loadConfig>;
+let app: ReturnType<typeof createApp>;
+try {
+  cfg = loadConfig();
+  app = createApp(cfg);
+} catch (err) {
+  fatalConfig(err);
+}
 const web = createWebApp(app);
 
 const server = serve({ fetch: web.fetch, port: cfg.PORT, hostname: cfg.HOST }, (info) => {

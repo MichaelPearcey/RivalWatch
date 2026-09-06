@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ConfigError } from "../config.js";
 import { log } from "../logger.js";
 
 export type Db = DatabaseSync;
@@ -17,8 +18,13 @@ function migrationsDir(): string {
 }
 
 export function openDb(path: string): Db {
-  if (path !== ":memory:") mkdirSync(dirname(resolve(path)), { recursive: true });
-  const db = new DatabaseSync(path);
+  let db: DatabaseSync;
+  try {
+    if (path !== ":memory:") mkdirSync(dirname(resolve(path)), { recursive: true });
+    db = new DatabaseSync(path);
+  } catch (err) {
+    throw new ConfigError(`Cannot open database at ${path} (${(err as Error).message}). Is the directory writable by this user and the volume mounted? Set DATABASE_PATH to a writable location.`);
+  }
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec("PRAGMA busy_timeout = 5000;");
