@@ -287,6 +287,26 @@ export function createWebApp(app: App) {
     return c.json(await app.approvals.decide(P(c), id(c), approve, note));
   });
   api.post("/admin/scheduler/tick", requireAdmin, async (c) => c.json({ processed: await app.scheduler.tick() }));
+
+  // Agents (operator-only)
+  api.get("/admin/agents", requireAdmin, (c) => c.json({ enabled: app.agents.enabled, agents: app.agents.state(), runs: app.agents.runs({ limit: 20 }), cost_24h_usd: app.agents.costSince(new Date(Date.now() - 86_400_000).toISOString()) }));
+  api.post("/admin/agents/:name/run", requireAdmin, async (c) => {
+    try {
+      return c.json(await app.agents.runNow(String(c.req.param("name")), "manual"));
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 409);
+    }
+  });
+  api.post("/admin/agents/:name/enabled", requireAdmin, async (c) => {
+    const { enabled } = z.object({ enabled: z.boolean() }).parse(await c.req.json());
+    app.agents.setEnabled(String(c.req.param("name")), enabled, P(c).actor);
+    return c.json({ ok: true });
+  });
+  api.get("/admin/agents/notes", requireAdmin, (c) => c.json(app.agents.notes({ unreadOnly: c.req.query("unread") === "1", limit: Number(c.req.query("limit") ?? 50) })));
+  api.post("/admin/agents/notes/:id/read", requireAdmin, (c) => {
+    app.agents.markNoteRead(id(c));
+    return c.body(null, 204);
+  });
   api.post("/admin/digests/run", requireAdmin, async (c) => c.json({ sent: await app.digests.runDue() }));
 
   web.route("/api", api);
@@ -452,6 +472,21 @@ export function createWebApp(app: App) {
       const r = await A.setAccountPlan(app, P(c), aid, String(form.plan), form.reason ? String(form.reason) : undefined);
       return `Account #${r.account_id} is now on the ${PLANS[r.plan]!.name} plan (approval #${r.approval_id}).`;
     });
+  });
+  ui.post("/admin/agents/:name/:verb", requireAdmin, async (c) => {
+    const name = String(c.req.param("name"));
+    const verb = String(c.req.param("verb"));
+    return tryUi(c, "/admin", async () => {
+      if (verb === "run") {
+        const r = await app.agents.runNow(name, "manual");
+        return `${name} run #${r.id} ${r.status}: ${r.summary ?? r.error ?? ""} (cost $${r.estimated_cost_usd.toFixed(4)})`;
+      }
+      app.agents.setEnabled(name, verb === "enable", P(c).actor);
+    });
+  });
+  ui.post("/admin/notes/:id/read", requireAdmin, (c) => {
+    app.agents.markNoteRead(id(c));
+    return c.redirect("/admin");
   });
   ui.post("/admin/approvals/:id/:verb", requireAdmin, async (c) => {
     const aid = id(c);

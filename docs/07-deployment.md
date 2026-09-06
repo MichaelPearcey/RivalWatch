@@ -64,6 +64,10 @@ instance; running two would double-fetch. (`railway.json` pins `numReplicas: 1`.
 | `RESEND_API_KEY` | `re_…` | **yes** | Create at resend.com; restrict to "sending access" |
 | `EMAIL_FROM` | `RivalWatch <digest@yourdomain>` | no | Domain must be verified in Resend (DKIM + SPF) |
 | `BOOTSTRAP_ADMIN_TOKEN` | random, 16+ chars, **temporary** | **yes** | Enables `/auth/bootstrap` for the very first admin sign-in; remove afterwards |
+| `ANTHROPIC_WORKSPACE_ID` | `wrkspc_…` | no | Required when the API key is organisation-level rather than workspace-scoped |
+| `AGENTS_ENABLED` | `true` | no | Turns on the Support/Ops, Manager and Growth agents (needs Anthropic) |
+| `AGENT_MODEL` | (defaults to `ANTHROPIC_MODEL`) | no | Model for agent runs |
+| `AGENT_DAILY_COST_CAP_USD` | `1` | no | Rolling 24h cap across all agent runs; runs beyond it are recorded as `capped` |
 | `CONFIRM_DELAY_MINUTES` | `60` | no | |
 | `DIGEST_WEEKDAY` / `DIGEST_HOUR_UTC` | `1` / `8` | no | Monday 08:00 UTC |
 | `FETCH_USER_AGENT` | include a real contact URL | no | Site owners must be able to reach us |
@@ -94,7 +98,8 @@ and download. Do this before every schema migration deploy.
 |------|------|-------|
 | Railway Hobby plan | $5/month, includes $5 usage credit | A single small service typically fits in the credit |
 | Railway volume | $0.25/GB-month (first GB usually within credit) | |
-| Anthropic API | usage-based; ≈ $0.001–0.003 per analysed change with Haiku | Capped in-app at `AI_DAILY_COST_CAP_USD` (default $2/day ⇒ ≤ $60/month worst case). Set a lower monthly limit in the Anthropic console. |
+| Anthropic API (analysis) | usage-based; ≈ $0.0015 per analysed change with Haiku 4.5 | Capped in-app at `AI_DAILY_COST_CAP_USD` (default $2/day ⇒ ≤ $60/month worst case). Set a lower monthly limit in the Anthropic console. |
+| Anthropic API (agents) | ≈ $0.03 per agent run; default schedules ⇒ ≈ $4/month | Capped at `AGENT_DAILY_COST_CAP_USD` (default $1/day) plus per-run caps |
 | Resend | free up to 3,000 emails/month | Domain required for non-test sending |
 | GitHub private repo | free | |
 

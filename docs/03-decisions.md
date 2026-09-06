@@ -192,6 +192,31 @@ catalogue entry, automatically gated and audited. Tier-1 (autonomous) actions
 remain plain API calls attributed to `agent:<name>`. Billing will later
 request `account.set_plan` the same way.
 
+## ADR-016: Agents are scheduled tool-using runs with a closed tool set
+
+**Context.** The company must be operated largely by AI agents (Manager,
+Growth, Support/Ops), under the permission tiers, with full auditability and
+bounded cost, without giving any agent credentials or destructive power.
+
+**Decision.** `src/agents/`: an agent = role prompt + briefing + whitelist of
+tools + schedule + per-run cost cap. Tools are read-only queries over the
+system's own data, plus exactly two write tools: `request_approval` (creates
+an approvals row) and `write_note` (report/draft/recommendation for the
+owner). The Manager additionally gets `decide_approval`, restricted by the
+approvals layer to medium-risk requests it did not raise itself. The runner
+(`AgentRunner`) records an `agent.action` event per tool call, an `ai.call`
+event per model turn (with cost), and an `agent_runs` row per run; it stops at
+`maxTurns`, at the per-run cap, or at the rolling daily cap across agents.
+Agents are off unless `AGENTS_ENABLED=true`; each can be disabled in `/admin`.
+Runs are sequential (one at a time) and use the Haiku-class model by default.
+
+**Consequences.** Adding a capability = adding a tool (read) or an approval
+action (write); prompts cannot escalate beyond the tool set. Agents produce
+*requests and notes*, humans (or the Manager, for medium risk) produce
+*decisions*, the system produces *effects*. Cost at default schedules is
+≈ $4/month. Tool results are the main token cost; tools must stay terse.
+Verified live on 2026-09-06 with Claude Haiku 4.5 (see scripts/live-agent-check.ts).
+
 ## INCIDENT-001 (2026-09-06): vendor API keys exposed in an agent transcript
 
 **What happened.** While listing Railway variable *names*, an ad-hoc PowerShell

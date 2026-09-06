@@ -1,5 +1,7 @@
 import { createAnalyzer } from "./ai/index.js";
 import type { Analyzer } from "./ai/types.js";
+import { Agents } from "./agents/index.js";
+import type { MessagesClient } from "./agents/runner.js";
 import { Approvals } from "./approvals.js";
 import { Auth } from "./auth.js";
 import type { Config } from "./config.js";
@@ -30,6 +32,7 @@ export interface App {
   auth: Auth;
   digests: DigestJob;
   approvals: Approvals;
+  agents: Agents;
   close(): void;
 }
 
@@ -37,6 +40,8 @@ export interface AppOverrides {
   analyzer?: Analyzer;
   fetchImpl?: typeof fetch;
   pipeline?: PipelineOptions;
+  /** Fake Anthropic messages client for agent tests. */
+  agentClient?: MessagesClient;
 }
 
 export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
@@ -77,12 +82,15 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
     auth,
     digests,
     approvals: undefined as unknown as Approvals,
+    agents: undefined as unknown as Agents,
     close() {
       scheduler.stop();
       db.close();
     },
   };
   app.approvals = new Approvals(app);
+  app.agents = new Agents(app, cfg, overrides.agentClient);
   scheduler.addJob({ name: "approvals_expire", run: (now) => void app.approvals.expireStale(now) });
+  scheduler.addJob({ name: "agents", run: (now) => app.agents.runDue(now).then(() => undefined) });
   return app;
 }

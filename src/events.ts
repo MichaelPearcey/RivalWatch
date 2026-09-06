@@ -64,13 +64,16 @@ export type EventType =
   | "app.started"
   // agent governance (vocabulary reserved for the Manager AI layer)
   | "agent.action"
+  | "agent.run_started"
+  | "agent.run_finished"
+  | "agent.enabled_changed"
   | "approval.requested"
   | "approval.granted"
   | "approval.denied"
   | "approval.expired"
   | "approval.execution_failed";
 
-export type EntityType = "account" | "user" | "business" | "competitor" | "page" | "snapshot" | "change" | "insight" | "email" | "api_key" | "suggestion" | "approval";
+export type EntityType = "account" | "user" | "business" | "competitor" | "page" | "snapshot" | "change" | "insight" | "email" | "api_key" | "suggestion" | "approval" | "agent_run";
 export type RiskLevel = "low" | "medium" | "high";
 export type EventResult = "ok" | "failed" | "pending" | "denied" | "skipped";
 

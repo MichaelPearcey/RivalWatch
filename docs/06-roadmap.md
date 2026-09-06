@@ -39,10 +39,13 @@ Rough order. Each item should be small enough for a single Devin session.
 - [ ] Monthly strategic analysis (Plus)
 - [ ] RSS/blog source, YouTube source
 
-## Phase 3 - Agent-operated company
+## Phase 3 - Agent-operated company (foundation done 2026-09-06)
 
-- [ ] Scoped API keys with permission tiers; `approvals` table + owner inbox
-- [ ] Owner dashboard: MRR, signups, churn, scan health, AI spend, agent actions, pending approvals
-- [ ] Support AI reading `events` + customer data via API
-- [ ] Growth AI: content drafts, experiments (`experiments` table)
+- [x] Scoped API keys; `approvals` table + owner inbox (ADR-015)
+- [x] Owner dashboard: users, plans, scan health, AI spend, agent runs/notes, pending approvals
+- [x] Agent framework with closed tool set, cost caps, audit (ADR-016)
+- [x] Support/Ops, Manager and Growth agents (v1 prompts)
+- [ ] MRR/churn on the dashboard (needs billing)
+- [ ] Agent prompt iteration driven by owner feedback on notes/approvals
+- [ ] Experiments table for Growth
 - [ ] Meta Graph API source (connected Instagram business accounts)

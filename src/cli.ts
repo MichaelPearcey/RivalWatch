@@ -1,9 +1,9 @@
 import { serve } from "@hono/node-server";
-import { createApp, type App } from "./app.js";
-import type { Principal } from "./auth.js";
+import { createApp } from "./app.js";
 import { loadConfig, type Config } from "./config.js";
+import { seedDemo } from "./demo-seed.js";
 import { log } from "./logger.js";
-import { addCompetitor, createBusiness, scanBusiness } from "./web/actions.js";
+import { scanBusiness } from "./web/actions.js";
 import { createWebApp } from "./web/app.js";
 
 const USAGE = `rivalwatch CLI
@@ -62,26 +62,6 @@ async function main(argv: string[]): Promise<void> {
       process.stdout.write(USAGE);
       if (cmd) process.exitCode = 1;
   }
-}
-
-/** Creates a demo account/user and returns a Principal to act as. */
-export function seedDemo(app: App, demoBase: string, email = "demo@rivalwatch.local") {
-  let user = app.repo.getUserByEmail(email);
-  if (!user) {
-    const account = app.repo.createAccount({ name: "Bright Pixel Design", plan: "pro" });
-    user = app.repo.createUser({ account_id: account.id, email, is_admin: true });
-    app.events.record({ type: "account.created", actor: "system", accountId: account.id, entity: { type: "account", id: account.id }, payload: { demo: true } });
-  }
-  const principal: Principal = { user, accountId: user.account_id, actor: `user:${user.id}`, via: "session", isAdmin: true };
-  const existing = app.repo.listBusinesses(user.account_id)[0];
-  if (existing) return { principal, business: existing };
-  const business = createBusiness(app, principal, {
-    name: "Bright Pixel Design",
-    website: "https://brightpixel.example",
-    description: "Freelance brand and web design studio for small businesses in the UK.",
-    pricing_notes: "Starter £25/month, Studio £55/month. No annual plan yet.",
-  });
-  return { principal, business, seedCompetitor: () => addCompetitor(app, principal, business.id, { name: "Acme Studio", website: `${demoBase}/`, discover: true, pages: [{ url: `${demoBase}/`, kind: "home" }, { url: `${demoBase}/pricing`, kind: "pricing" }] }) };
 }
 
 async function demo(cfg: Config): Promise<void> {

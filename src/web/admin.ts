@@ -34,6 +34,7 @@ export function adminOverview(app: App): AdminOverview {
 
   const describe = (a: Approval) => ({ ...a, summary: app.approvals.describe(a) });
   return {
+    agents: { enabled: app.agents.enabled, state: app.agents.state(), runs: app.agents.runs({ limit: 10 }), notes: app.agents.notes({ limit: 20 }), cost24h: app.agents.costSince(d1) },
     pendingApprovals: app.approvals.list({ status: "pending" }).map(describe),
     recentApprovals: app.approvals.list({ limit: 20 }).filter((a) => a.status !== "pending").map(describe),
     totals,

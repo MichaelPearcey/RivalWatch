@@ -1,4 +1,5 @@
 import type { FC } from "hono/jsx";
+import type { AgentNote, AgentRunRow, AgentStateRow } from "../agents/types.js";
 import type { Approval } from "../approvals.js";
 import type { Principal } from "../auth.js";
 import type { Account, ApiKey, Business, Change, Competitor, EmailRow, Insight, InsightFeedback, MonitoredPage, PageSuggestion, Snapshot, User } from "../db/repo.js";
@@ -541,6 +542,7 @@ export const SettingsPage: FC<{ principal: Principal; account: Account; users: U
 export type ApprovalView = Approval & { summary: string };
 
 export interface AdminOverview {
+  agents: { enabled: boolean; state: (AgentStateRow & { title: string; description: string; interval_hours: number })[]; runs: AgentRunRow[]; notes: AgentNote[]; cost24h: number };
   pendingApprovals: ApprovalView[];
   recentApprovals: ApprovalView[];
   totals: Record<string, number>;
@@ -614,6 +616,99 @@ export const AdminPage: FC<{ principal: Principal; o: AdminOverview; flash?: str
         </details>
       ) : null}
     </div>
+
+    <div class="card">
+      <div class="row">
+        <h2 style="margin:0">Agents</h2>
+        <span class={`badge ${o.agents.enabled ? "st-ACTIVE" : ""}`}>{o.agents.enabled ? "enabled" : "disabled (AGENTS_ENABLED=false or no Anthropic provider)"}</span>
+        <span class="muted">agent spend 24h {fmtUsd(o.agents.cost24h)}</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Agent</th>
+            <th>Every</th>
+            <th>Last run</th>
+            <th>Next run</th>
+            <th>State</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {o.agents.state.map((a) => (
+            <tr>
+              <td>
+                <strong>{a.title}</strong>
+                <div class="muted">{a.description}</div>
+              </td>
+              <td>{a.interval_hours}h</td>
+              <td class="muted">
+                {fmtDate(a.last_run_at)} {a.last_status ? <span class="badge">{a.last_status}</span> : null}
+              </td>
+              <td class="muted">{a.enabled ? fmtDate(a.next_run_at) : "—"}</td>
+              <td>{a.enabled ? <span class="badge st-ACTIVE">on</span> : <span class="badge st-PAUSED">off</span>}</td>
+              <td style="white-space:nowrap">
+                <form method="post" action={`/admin/agents/${a.name}/run`} style="display:inline">
+                  <button class="tiny secondary" type="submit" disabled={!o.agents.enabled}>
+                    Run now
+                  </button>
+                </form>{" "}
+                <form method="post" action={`/admin/agents/${a.name}/${a.enabled ? "disable" : "enable"}`} style="display:inline">
+                  <button class="tiny secondary" type="submit">
+                    {a.enabled ? "Disable" : "Enable"}
+                  </button>
+                </form>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {o.agents.notes.length ? (
+        <>
+          <h3 style="margin:1rem 0 .3rem">Agent notes</h3>
+          {o.agents.notes.map((n) => (
+            <details class="card" style={n.read_at ? "opacity:.75" : "border-color:var(--accent)"}>
+              <summary>
+                <span class="badge">{n.kind}</span> <strong>{n.title}</strong> <span class="muted">· {n.agent} · {fmtDate(n.created_at)}</span>
+              </summary>
+              <pre style="white-space:pre-wrap">{n.body}</pre>
+              {n.read_at ? null : (
+                <form method="post" action={`/admin/notes/${n.id}/read`}>
+                  <button class="tiny secondary" type="submit">
+                    Mark read
+                  </button>
+                </form>
+              )}
+            </details>
+          ))}
+        </>
+      ) : (
+        <p class="muted" style="margin:.6rem 0 0">No agent notes yet.</p>
+      )}
+      {o.agents.runs.length ? (
+        <details style="margin-top:.5rem">
+          <summary class="muted">Recent runs ({o.agents.runs.length})</summary>
+          <table>
+            <tbody>
+              {o.agents.runs.map((r) => (
+                <tr>
+                  <td class="muted">{fmtDate(r.started_at)}</td>
+                  <td>{r.agent}</td>
+                  <td>
+                    <span class="badge">{r.status}</span>
+                  </td>
+                  <td class="muted">
+                    {r.turns} turns · {r.tool_calls} tools · {fmtUsd(r.estimated_cost_usd)}
+                  </td>
+                  <td>{r.summary ?? r.error}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      ) : null}
+    </div>
+
     <div class="card">
       {Object.entries(o.totals).map(([k, v]) => (
         <span class="stat">

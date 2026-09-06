@@ -62,6 +62,12 @@ const ConfigSchema = z.object({
   /** Hard cap on estimated spend per rolling 24h in USD. 0 = unlimited. */
   AI_DAILY_COST_CAP_USD: z.coerce.number().nonnegative().default(2),
 
+  /** Autonomous agents (support-ops, manager, growth). Off by default; requires the Anthropic provider. */
+  AGENTS_ENABLED: bool(false),
+  AGENT_MODEL: z.string().optional(),
+  /** Rolling 24h cap across all agent runs (USD). */
+  AGENT_DAILY_COST_CAP_USD: z.coerce.number().nonnegative().default(1),
+
   EMAIL_PROVIDER: z.enum(["log", "resend"]).default("log"),
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default("RivalWatch <onboarding@resend.dev>"),
