@@ -8,7 +8,7 @@ import type { EventRow } from "../events.js";
 import { COMPANY, LEGAL_VERSION } from "../legal.js";
 import { PLANS, getPlan } from "../plans.js";
 import { renderMarkdown } from "./md.js";
-import { CSS } from "./theme.js";
+import { CSS, JS } from "./theme.js";
 
 // ---------------------------------------------------------------------------
 // Shell
@@ -21,10 +21,17 @@ export const Layout: FC<{ title: string; children?: unknown; flash?: string | un
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <title>{title} · RivalWatch</title>
       <meta name="description" content={description ?? "RivalWatch watches your competitors' websites and tells you, in plain English, when something happens that actually matters."} />
-      <meta name="color-scheme" content="light" />
-      <style>{CSS}</style>
+      <meta name="color-scheme" content="dark light" />
+      <style>{raw(CSS)}</style>
+      <script>{raw(THEME_BOOT)}</script>
     </head>
     <body>
+      <div class="bg" aria-hidden="true">
+        <div class="grid"></div>
+        <div class="orb a"></div>
+        <div class="orb b"></div>
+        <div class="orb c"></div>
+      </div>
       <nav class="nav">
         <div class="nav-in">
           <a class="brand" href="/">
@@ -43,6 +50,7 @@ export const Layout: FC<{ title: string; children?: unknown; flash?: string | un
             </>
           )}
           <span class="right">
+            <ThemeToggle />
             {principal ? (
               <>
                 <span class="muted small hide-sm">{principal.user.email}</span>
@@ -55,7 +63,7 @@ export const Layout: FC<{ title: string; children?: unknown; flash?: string | un
             ) : (
               <>
                 <a class="link" href="/login">Sign in</a>
-                <a class="btn tiny" href="/login?mode=signup" style="padding:.4rem .8rem;font-size:.85rem">
+                <a class="btn tiny" href="/login?mode=signup" style="padding:.45rem .9rem;font-size:.85rem">
                   Start free
                 </a>
               </>
@@ -68,8 +76,29 @@ export const Layout: FC<{ title: string; children?: unknown; flash?: string | un
         {children}
       </main>
       <Footer />
+      <script>{raw(JS)}</script>
     </body>
   </html>
+);
+
+const THEME_BOOT = `try{if(localStorage.getItem('rw-theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}`;
+
+const ThemeToggle: FC = () => (
+  <button type="button" class="theme" onclick="rwToggleTheme()" aria-label="Toggle light/dark theme" title="Toggle theme">
+    <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4 1.4-1.4" />
+    </svg>
+    <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+    </svg>
+  </button>
+);
+
+const Icon: FC<{ d: string }> = ({ d }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d={d} />
+  </svg>
 );
 
 const Footer: FC = () => (
@@ -95,93 +124,148 @@ const gbp = (pence: number) => (pence === 0 ? "Free" : `£${(pence / 100).toFixe
 // ---------------------------------------------------------------------------
 
 const ExampleInsight: FC = () => (
-  <div class="card insight" style="text-align:left;max-width:640px;margin:2rem auto 0">
+  <div class="card insight" style="margin:0">
     <div class="row small">
       <span class="badge cat imp-4">pricing</span>
       <span class="badge">importance 4/5</span>
-      <span class="muted">Acme Studio · pricing page · confirmed 2 hours ago</span>
+      <span class="badge ok">confirmed</span>
+      <span class="muted">Acme Studio · /pricing · 2 h ago</span>
     </div>
     <h3>Acme Studio raised its Professional plan from £49 to £59/month and added a £399/year option</h3>
-    <p>Their main monthly tier went up 20%. The new annual plan works out at about £33/month for customers who commit for a year.</p>
-    <div class="why">
-      <strong>Why this matters to you:</strong> your Studio tier (£55/month) is now cheaper than their monthly price, which you can use in positioning. But their annual option undercuts you for committed buyers — worth deciding whether to offer one.
+    <p class="small">Their main monthly tier went up 20%. The new annual plan works out at about £33/month for customers who commit for a year.</p>
+    <div class="why small">
+      <strong>Why this matters to you:</strong> your Studio tier (£55/month) is now cheaper than their monthly price — usable in positioning. But their annual option undercuts you for committed buyers; worth deciding whether to offer one.
+    </div>
+    <div class="row small" style="margin-top:.6rem;gap:.4rem">
+      <span class="muted">Evidence:</span>
+      <code style="color:var(--bad)">- £49/month</code>
+      <code style="color:var(--ok)">+ £59/month</code>
+      <code style="color:var(--ok)">+ £399/year</code>
     </div>
   </div>
 );
 
+const ICONS = {
+  radar: "M12 12 21 7M12 12v9M12 12 4.5 16.5M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0zm5 0a4 4 0 1 0 8 0 4 4 0 0 0-8 0z",
+  filter: "M3 5h18l-7 8v6l-4 2v-8L3 5z",
+  brain: "M9 3a3 3 0 0 0-3 3v1a3 3 0 0 0-2 5 3 3 0 0 0 1 6 3 3 0 0 0 4 3h1V3H9zm6 0a3 3 0 0 1 3 3v1a3 3 0 0 1 2 5 3 3 0 0 1-1 6 3 3 0 0 1-4 3h-1V3h1z",
+  shield: "M12 3 4 6v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V6l-8-3zm-3 9 2 2 4-4",
+  eye: "M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12zm10 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+  lock: "M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5V11zm7 4v3",
+};
+
 export const LandingPage: FC = () => (
   <Layout title="Know when your competitors move" description="AI-filtered competitor monitoring for small businesses. We watch their pricing, products and announcements and tell you only what matters.">
     <section class="hero">
-      <span class="eyebrow">Competitor monitoring for small businesses</span>
-      <h1>Know when your competitors move — without watching them yourself.</h1>
-      <p class="lead">Tell us who your competitors are. We quietly check their pricing, product and announcement pages and tell you, in plain English, when something changes that actually matters to your business.</p>
+      <span class="eyebrow">
+        <span class="dot"></span> Continuous competitor intelligence
+      </span>
+      <h1>
+        Know the moment your <span class="gradient">competitors move.</span>
+      </h1>
+      <p class="lead">RivalWatch watches your competitors' pricing, product and announcement pages around the clock, filters out the noise, and tells you in plain English what changed and why it matters to your business.</p>
       <div class="row" style="justify-content:center">
         <a class="btn big" href="/login?mode=signup">
-          Start free — 2 competitors
+          Start free — no card
         </a>
-        <a class="btn big secondary" href="/pricing">
-          See pricing
+        <a class="btn big secondary" href="#how">
+          See how it works
         </a>
       </div>
-      <p class="muted small">No card needed. Cancel any time. Your data is yours — export or delete it in one click.</p>
-      <ExampleInsight />
+      <div class="mock reveal">
+        <div class="bar">
+          <i></i>
+          <i></i>
+          <i></i>
+          <span class="url">app.rivalwatch — Bright Pixel Design · Insights</span>
+        </div>
+        <div class="body">
+          <ExampleInsight />
+        </div>
+      </div>
+      <div class="stats reveal">
+        <div>
+          <b>every change</b>confirmed on a second visit
+        </div>
+        <div>
+          <b>0</b>tracking cookies
+        </div>
+        <div>
+          <b>&lt; 2 min</b>your Monday digest
+        </div>
+        <div>
+          <b>100%</b>evidence-linked
+        </div>
+      </div>
     </section>
 
-    <section id="how">
-      <h2 class="center">How it works</h2>
+    <section id="how" class="block">
+      <div class="center reveal">
+        <span class="eyebrow">How it works</span>
+        <h2 style="font-size:2rem;margin-top:0">From "they changed something" to "here's what to do"</h2>
+      </div>
       <div class="grid g3 steps">
-        <div class="card step">
+        <div class="card step reveal">
           <h3>Tell us about you and them</h3>
-          <p class="muted">Describe your business and your prices, then add competitor websites. We find their pricing, product and news pages for you to confirm.</p>
+          <p class="muted">Describe your business and your prices, then add competitor websites. We find their pricing, product and news pages and you confirm which to watch.</p>
         </div>
-        <div class="card step">
-          <h3>We watch, politely</h3>
-          <p class="muted">Our crawler checks the pages you chose on a schedule, respects every site's rules, and confirms each change on a second visit so A/B tests and glitches never reach you.</p>
+        <div class="card step reveal">
+          <h3>We watch, politely and precisely</h3>
+          <p class="muted">A well-behaved crawler checks the pages on a schedule, obeys every site's rules, and re-verifies each change on a second visit so A/B tests and glitches never reach you.</p>
         </div>
-        <div class="card step">
+        <div class="card step reveal">
           <h3>You get only what matters</h3>
-          <p class="muted">An AI analyst reads each confirmed change against <em>your</em> pricing and positioning and writes a short note: what changed, and why it matters to you. Weekly digest, or alerts for the big ones.</p>
+          <p class="muted">An AI analyst reads each confirmed change against <em>your</em> pricing and positioning and writes a short note: what changed, why it matters to you, what to consider.</p>
         </div>
       </div>
     </section>
 
-    <section>
-      <h2 class="center">Not another "page changed" alert</h2>
-      <div class="grid g2">
-        <div class="card flat">
-          <h3>Signal, not noise</h3>
-          <p class="muted">Rotating testimonials, dates, cookie banners and counters are filtered out before anything reaches you. Every insight links to the exact before/after text so you can verify it.</p>
-        </div>
-        <div class="card flat">
-          <h3>Built for people, not analysts</h3>
-          <p class="muted">No dashboards to learn. One page per business, one card per meaningful change, and a Monday email you can read in two minutes.</p>
-        </div>
-        <div class="card flat">
-          <h3>Honest about coverage</h3>
-          <p class="muted">If a site blocks automated access or we can't read it, you see that clearly on your dashboard. We never show a broken monitor as healthy.</p>
-        </div>
-        <div class="card flat">
-          <h3>Your data, your rules</h3>
-          <p class="muted">UK-based, GDPR-aligned. One necessary cookie, no trackers. Export everything as JSON or delete your account and all its data from Settings.</p>
-        </div>
+    <section class="block">
+      <div class="center reveal">
+        <span class="eyebrow">Built differently</span>
+        <h2 style="font-size:2rem;margin-top:0">Not another "page changed" alert</h2>
+      </div>
+      <div class="grid g3">
+        {[
+          [ICONS.filter, "Signal, not noise", "Rotating testimonials, dates, cookie banners and counters are stripped before anything reaches you. Two-visit confirmation kills false positives."],
+          [ICONS.brain, "Analysis relative to you", "Insights are written against your own pricing and positioning — \"their annual plan now undercuts your Studio tier\" — not generic summaries."],
+          [ICONS.eye, "Evidence on every insight", "Each card links to the exact before/after text we saw, so you can verify in seconds and correct us when we're wrong."],
+          [ICONS.radar, "Honest about coverage", "If a site blocks automated access or can't be read, your dashboard says so. A broken monitor is never shown as healthy."],
+          [ICONS.shield, "Private by design", "UK-based and GDPR-aligned. One necessary cookie, no trackers, no third-party scripts. Export or delete everything from Settings."],
+          [ICONS.lock, "Under human control", "The AI that runs our operations can only recommend and request; a person approves anything consequential. Every action is audited."],
+        ].map(([d, title, body]) => (
+          <div class="card feature reveal">
+            <Icon d={d!} />
+            <h3>{title}</h3>
+            <p class="muted small">{body}</p>
+          </div>
+        ))}
       </div>
     </section>
 
-    <section class="center" style="padding:2rem 0 1rem">
-      <h2>Start watching today</h2>
-      <p class="muted">Two competitors free, forever. Upgrade when you need more.</p>
-      <a class="btn big" href="/login?mode=signup">
-        Create your free account
-      </a>
+    <section class="block">
+      <div class="cta reveal">
+        <h2 style="font-size:2rem;margin-top:0">Start watching today</h2>
+        <p class="muted">Two competitors free, forever. Upgrade when you need more.</p>
+        <a class="btn big" href="/login?mode=signup">
+          Create your free account
+        </a>
+        <p class="muted tiny" style="margin-top:1rem">
+          No card needed · cancel any time · <a href="/privacy">privacy policy</a>
+        </p>
+      </div>
     </section>
   </Layout>
 );
 
 export const PricingPage: FC<{ principal?: Principal | undefined }> = ({ principal }) => (
   <Layout title="Pricing" principal={principal} description="Simple pricing for competitor monitoring: free for 2 competitors, £9.99/month for 10, £19.99/month for 25.">
-    <section class="hero" style="padding-bottom:1rem">
-      <h1>Simple, honest pricing</h1>
-      <p class="lead">Prices in GBP, VAT included where applicable. Monthly, cancel any time.</p>
+    <section class="center" style="padding:3rem 0 2rem">
+      <span class="eyebrow">Pricing</span>
+      <h1 style="font-size:clamp(2rem,5vw,3.2rem);letter-spacing:-.03em">
+        Simple, <span class="gradient">honest</span> pricing
+      </h1>
+      <p class="muted" style="font-size:1.1rem">Prices in GBP, VAT included where applicable. Monthly, cancel any time.</p>
     </section>
     <div class="grid g3">
       {Object.values(PLANS).map((p) => (

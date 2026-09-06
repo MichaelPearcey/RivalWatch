@@ -1,5 +1,8 @@
 import { Hono, type Context, type Next } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { z } from "zod";
 import type { App } from "../app.js";
@@ -18,6 +21,8 @@ type Env = { Variables: { principal: Principal | undefined } };
 type Ctx = Context<Env>;
 
 const idParam = z.coerce.number().int().positive();
+// Works from src/ (tsx) and dist/ (built): public/ sits next to both at the project root.
+const STATIC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../public");
 
 export function createWebApp(app: App) {
   const web = new Hono<Env>({ strict: false });
@@ -81,6 +86,17 @@ export function createWebApp(app: App) {
     // Full config only for admins.
     const p = c.get("principal");
     return c.json(p?.isAdmin ? { ...body, sources: app.sources.types(), config: redactConfig(cfg) } : body, db === "ok" ? 200 : 503);
+  });
+
+  // Self-hosted static assets (fonts). Whitelisted names only; long-lived cache.
+  web.get("/static/fonts/:file", (c) => {
+    const file = String(c.req.param("file"));
+    if (!/^[a-z0-9-]+\.woff2$/.test(file)) return c.notFound();
+    const path = resolve(STATIC_DIR, "fonts", file);
+    if (!existsSync(path)) return c.notFound();
+    c.header("content-type", "font/woff2");
+    c.header("cache-control", "public, max-age=31536000, immutable");
+    return c.body(readFileSync(path));
   });
 
   // Public marketing + legal pages

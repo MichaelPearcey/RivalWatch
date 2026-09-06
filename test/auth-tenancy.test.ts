@@ -55,7 +55,18 @@ describe("magic-link auth", () => {
     expect(ui.location).toContain("/login?next=%2Fsettings");
     const landing = await html(t.web, "/");
     expect(landing.status).toBe(200);
-    expect(landing.text).toContain("Know when your competitors move");
+    expect(landing.text).toContain("Know the moment your");
+    expect(landing.text).toContain("rwToggleTheme");
+    expect(landing.text).not.toMatch(/https?:\/\/(fonts|cdn|www\.googletagmanager)/); // no third-party assets
+    // The stylesheet must reach the browser unescaped (JSX would otherwise turn quotes into &quot; inside <style>).
+    expect(landing.text).toContain('@font-face{font-family:"Plus Jakarta Sans"');
+    expect(landing.text).not.toContain("&quot;Plus Jakarta Sans&quot;");
+    const font = await t.web.request(`${t.base}/static/fonts/plus-jakarta-sans-latin.woff2`);
+    expect(font.status).toBe(200);
+    expect(font.headers.get("content-type")).toBe("font/woff2");
+    expect(font.headers.get("cache-control")).toContain("immutable");
+    expect((await t.web.request(`${t.base}/static/fonts/..%2F..%2Fpackage.json`)).status).toBe(404);
+    expect((await t.web.request(`${t.base}/static/fonts/nope.woff2`)).status).toBe(404);
     for (const path of ["/pricing", "/privacy", "/terms", "/bot"]) expect((await html(t.web, path)).status, path).toBe(200);
     expect((await html(t.web, "/privacy")).text).toContain("Privacy Policy");
   });

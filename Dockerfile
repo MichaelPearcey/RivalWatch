@@ -15,6 +15,7 @@ RUN apk add --no-cache su-exec && addgroup -S app && adduser -S app -G app && mk
 COPY --from=build --chown=app:app /app/node_modules ./node_modules
 COPY --from=build --chown=app:app /app/dist ./dist
 COPY --chown=app:app package.json ./
+COPY --chown=app:app public ./public
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # Railway/Fly inject PORT; the app binds 0.0.0.0 in production.
