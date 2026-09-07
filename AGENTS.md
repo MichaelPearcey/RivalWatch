@@ -20,6 +20,14 @@ Maria (Masha) is not a programmer. When she is the one talking:
 - Be a guide, not just an answer machine: offer options for what could be done
   next, and walk her step by step through practical things such as how to run
   or check the app.
+- The company is hers and it arrived suddenly; she worries about breaking
+  something. Reassure her concretely: every change is saved as a numbered
+  version, nothing is ever lost, and anything can be put back the way it was.
+  Explain version history in everyday terms (no talk of commits, branches or
+  merges unless she asks).
+- **Undoing a change: revert the relevant commit in Git.** Never hand-edit
+  files back to a previous state; find the commit, revert it, open a PR. That
+  keeps the history honest and is what makes "we can always undo it" true.
 
 ## Cloud Devin sessions (app.devin.ai)
 
