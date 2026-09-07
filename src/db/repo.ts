@@ -108,6 +108,30 @@ export interface CompetitorProfile {
   provider: string;
 }
 
+/** AI-generated (or heuristic) overview of every competitor of one business. */
+export interface LandscapeDoc {
+  headline: string;
+  summary: string;
+  competitors: { name: string; positioning: string; pricing: string; strengths: string; watch_out: string }[];
+  opportunities: string[];
+  threats: string[];
+  recommendations: string[];
+  provider: string;
+}
+
+export interface Landscape {
+  id: number;
+  account_id: number;
+  business_id: number;
+  status: "none" | "pending" | "ready" | "failed";
+  doc_json: string | null;
+  provider: string | null;
+  competitor_count: number;
+  generated_at: string | null;
+  error: string | null;
+  created_at: string;
+}
+
 export interface MonitoredPage {
   id: number;
   account_id: number;
@@ -358,6 +382,35 @@ export class Repo {
   deleteBusiness(accountId: number, id: number): boolean {
     return this.db.prepare("DELETE FROM businesses WHERE id = ? AND account_id = ?").run(id, accountId).changes > 0;
   }
+  // Competitor landscape (one document per business)
+  getLandscape(accountId: number, businessId: number): Landscape | undefined {
+    return this.db.prepare("SELECT * FROM landscapes WHERE business_id = ? AND account_id = ?").get(businessId, accountId) as Landscape | undefined;
+  }
+  setLandscape(input: { account_id: number; business_id: number; status: Landscape["status"]; doc: LandscapeDoc | null; competitorCount?: number; error?: string | null }): void {
+    this.db
+      .prepare(
+        `INSERT INTO landscapes (account_id, business_id, status, doc_json, provider, competitor_count, error, generated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'ready' THEN ${NOW} ELSE NULL END)
+         ON CONFLICT(business_id) DO UPDATE SET
+           status = excluded.status,
+           doc_json = COALESCE(excluded.doc_json, landscapes.doc_json),
+           provider = COALESCE(excluded.provider, landscapes.provider),
+           competitor_count = excluded.competitor_count,
+           error = excluded.error,
+           generated_at = CASE WHEN excluded.status = 'ready' THEN ${NOW} ELSE landscapes.generated_at END`,
+      )
+      .run(
+        input.account_id,
+        input.business_id,
+        input.status,
+        input.doc ? JSON.stringify(input.doc) : null,
+        input.doc?.provider ?? null,
+        input.competitorCount ?? 0,
+        input.error ?? null,
+        input.status,
+      );
+  }
+
   businessesDueForDigest(now: string): Business[] {
     return this.db
       .prepare("SELECT * FROM businesses WHERE digest_enabled = 1 AND next_digest_at IS NOT NULL AND next_digest_at <= ? ORDER BY next_digest_at LIMIT 50")

@@ -1,9 +1,21 @@
 import { z } from "zod";
 import type { App } from "../app.js";
 import type { Principal } from "../auth.js";
+import { generateLandscape, type LandscapeInput } from "../ai/landscape.js";
 import { generateProfile, type ProfileSource } from "../ai/profile.js";
-import { FEEDBACK_VERDICTS, PAGE_KINDS, type Business, type Competitor, type CompetitorProfile, type Insight, type InsightFeedback, type MonitoredPage, type PageSuggestion } from "../db/repo.js";
-import { LANGUAGE_NAMES, isLocale, type Locale } from "../i18n/index.js";
+import {
+  FEEDBACK_VERDICTS,
+  PAGE_KINDS,
+  type Business,
+  type Competitor,
+  type CompetitorProfile,
+  type Insight,
+  type InsightFeedback,
+  type LandscapeDoc,
+  type MonitoredPage,
+  type PageSuggestion,
+} from "../db/repo.js";
+import { LANGUAGE_NAMES, isLocale, translator, type Locale } from "../i18n/index.js";
 import { errorFields, log } from "../logger.js";
 import type { ProcessOutcome } from "../monitor/pipeline.js";
 import { PLANS, getPlan } from "../plans.js";
@@ -98,6 +110,7 @@ export function exportAccountData(app: App, p: Principal): Record<string, unknow
     changes: q("SELECT * FROM changes WHERE account_id = ?"),
     insights: q("SELECT * FROM insights WHERE account_id = ?"),
     insight_feedback: q("SELECT * FROM insight_feedback WHERE account_id = ?"),
+    landscapes: q("SELECT * FROM landscapes WHERE account_id = ?"),
     api_keys: q("SELECT id, name, key_prefix, created_at, last_used_at, revoked_at FROM api_keys WHERE account_id = ?"),
     emails: q("SELECT id, to_address, kind, subject, provider, status, created_at FROM emails WHERE account_id = ?"),
     events: q("SELECT ts, type, actor, entity_type, entity_id, result, payload FROM events WHERE account_id = ? ORDER BY ts"),
@@ -324,6 +337,69 @@ export function resolveSuggestion(app: App, p: Principal, id: number, accept: bo
   app.repo.setSuggestionStatus(id, "accepted");
   app.events.record({ type: "page.suggestion_accepted", actor, accountId: p.accountId, entity: { type: "suggestion", id }, payload: { url: s.url, page_id: page.id, automatic: actor === "system" } });
   return page;
+}
+
+// ---------- Competitor landscape ----------
+
+function ownerLocale(app: App, accountId: number): Locale {
+  const owner = app.repo.listUsers(accountId).find((u) => u.role === "owner");
+  return isLocale(owner?.locale) ? owner!.locale : "en";
+}
+
+function ownerLanguage(app: App, accountId: number): string {
+  return LANGUAGE_NAMES[ownerLocale(app, accountId)];
+}
+
+/**
+ * Builds the business-level "competitor landscape" briefing from what we already
+ * hold: each competitor's profile, their recent confirmed changes and their news.
+ * Never fetches anything, so it is cheap and safe to regenerate on demand; falls
+ * back to a heuristic document when the LLM is unavailable or capped.
+ */
+export async function generateLandscapeDoc(app: App, p: Principal, businessId: number): Promise<LandscapeDoc> {
+  const business = getBusiness(app, p, businessId);
+  const competitors = app.repo.listCompetitors(p.accountId, businessId);
+  app.repo.setLandscape({ account_id: p.accountId, business_id: businessId, status: "pending", doc: null, competitorCount: competitors.length });
+  try {
+    const insights = app.repo.listInsights(p.accountId, businessId, { limit: 60 });
+    const inputs: LandscapeInput[] = competitors.map((c) => {
+      let profile: CompetitorProfile | null = null;
+      try {
+        profile = c.profile_json ? (JSON.parse(c.profile_json) as CompetitorProfile) : null;
+      } catch {
+        profile = null;
+      }
+      return {
+        name: c.name,
+        website: c.website,
+        positioning: profile?.positioning ?? "",
+        pricing: profile?.pricing_summary ?? "",
+        target_customers: profile?.target_customers ?? "",
+        usps: profile?.usps ?? [],
+        products: profile?.products ?? [],
+        recent_changes: insights.filter((i) => i.competitor_id === c.id && i.matters === 1).slice(0, 5).map((i) => i.headline),
+        recent_news: app.repo.listNews(p.accountId, c.id, { limit: 5, relevantOnly: true }).map((n) => n.title),
+      };
+    });
+    const doc = await generateLandscape(app.llm, { name: business.name, description: business.description, pricing: business.pricing_notes }, inputs, {
+      language: ownerLanguage(app, p.accountId),
+      accountId: p.accountId,
+      t: translator(ownerLocale(app, p.accountId)),
+    });
+    app.repo.setLandscape({ account_id: p.accountId, business_id: businessId, status: "ready", doc, competitorCount: competitors.length });
+    app.events.record({
+      type: "landscape.generated",
+      actor: p.actor,
+      accountId: p.accountId,
+      entity: { type: "business", id: businessId },
+      payload: { provider: doc.provider, competitors: competitors.length, recommendations: doc.recommendations.length },
+    });
+    return doc;
+  } catch (err) {
+    app.repo.setLandscape({ account_id: p.accountId, business_id: businessId, status: "failed", doc: null, competitorCount: competitors.length, error: (err as Error).message });
+    app.events.record({ type: "landscape.generated", actor: p.actor, accountId: p.accountId, entity: { type: "business", id: businessId }, result: "failed", payload: errorFields(err) });
+    throw err;
+  }
 }
 
 // ---------- News ----------

@@ -53,11 +53,12 @@ select option{background:var(--bg-2);color:var(--ink)}select option:checked{back
 
 /* layout */
 .wrap{max-width:1140px;margin:0 auto;padding:1.5rem 1.25rem 4rem;position:relative}.narrow{max-width:780px}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:1.25rem;box-shadow:var(--shadow);margin-bottom:1rem;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:1.25rem;box-shadow:var(--shadow);margin-bottom:1rem;min-width:0;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .card.flat{box-shadow:none}.card.alert{border-color:rgba(248,113,113,.45);background:var(--bad-soft)}.card.good{border-color:rgba(52,211,153,.45)}.card.info{border-color:rgba(167,139,250,.45);background:rgba(167,139,250,.08)}
 .card.glow{box-shadow:var(--glow),var(--shadow)}
-.row{display:flex;gap:1rem;flex-wrap:wrap;align-items:center}.row.top{align-items:flex-start}.grow{flex:1}.ml{margin-left:auto}
-.grid{display:grid;gap:1rem}.g2{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}.g3{grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+.row{display:flex;gap:1rem;flex-wrap:wrap;align-items:center}.row.top{align-items:flex-start}.grow{flex:1;min-width:0}.ml{margin-left:auto}
+.grid{display:grid;gap:1rem}.g2{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}.g3{grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}.g4{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch}.scrollx table{min-width:34rem}.scrollx .w-main{min-width:14rem}
 .muted{color:var(--muted)}.small{font-size:.875rem}.tiny{font-size:.8rem}.center{text-align:center}
 .empty{padding:2.5rem 1rem;text-align:center;color:var(--muted)}
 
@@ -123,7 +124,10 @@ details summary{cursor:pointer}
 /* motion */
 .reveal{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s ease}.reveal.in{opacity:1;transform:none}
 @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}.orb{transform:none!important}html{scroll-behavior:auto}}
-@media (max-width:640px){.nav a.link.hide-sm{display:none}.hero{min-height:auto;padding:3rem 0 1rem}.stats{gap:1.25rem}}
+@media (max-width:640px){.nav a.link.hide-sm{display:none}.hero{min-height:auto;padding:3rem 0 1rem}.stats{gap:1.25rem}
+.nav-in{flex-wrap:wrap;gap:.6rem;padding:.6rem .9rem}.nav .right{margin-left:auto;flex-wrap:wrap;gap:.5rem}
+.wrap{padding:1.25rem .9rem 3rem}table{font-size:.85rem}th,td{padding:.5rem .45rem}pre{overflow-x:auto}
+.row>.grow{flex:1 0 100%}}
 `;
 
 /** Theme toggle (localStorage), parallax orbs, scroll reveal. Tiny, dependency-free, respects reduced motion. */

@@ -34,6 +34,7 @@ export type EventType =
   | "competitor.added"
   | "competitor.removed"
   | "competitor.profiled"
+  | "landscape.generated"
   | "news.fetched"
   | "news.fetch_failed"
   | "news.big"
