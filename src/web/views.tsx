@@ -590,7 +590,7 @@ const FeedTable: FC<{ t: Translate; items: FeedItem[]; competitorNames: Record<n
         <tr>
           <th>{t("feed.col.when")}</th>
           <th>{t("feed.col.competitor")}</th>
-          <th>{t("feed.col.what")}</th>
+          <th class="w-main">{t("feed.col.what")}</th>
           <th>{t("feed.col.type")}</th>
           <th>{t("feed.col.impact")}</th>
         </tr>
@@ -600,7 +600,7 @@ const FeedTable: FC<{ t: Translate; items: FeedItem[]; competitorNames: Record<n
           <tr>
             <td class="muted small" style="white-space:nowrap">{item.at.slice(0, 10)}</td>
             <td class="small">{competitorNames[item.competitorId] ?? ""}</td>
-            <td>
+            <td class="w-main">
               {item.kind === "change" ? (
                 <>
                   <a href={`/insights/${item.insight.id}`} style="font-weight:600;color:inherit">
@@ -929,7 +929,8 @@ export const BusinessPage: FC<{
               </button>
             </form>
           </details>
-          <table style="margin-top:.75rem">
+          <div class="scrollx" style="margin-top:.75rem">
+          <table>
             <thead>
               <tr>
                 <th>{t("page.col.page")}</th>
@@ -976,9 +977,11 @@ export const BusinessPage: FC<{
               ))}
             </tbody>
           </table>
+          </div>
           {suggestions.length ? (
             <div class="card info flat" style="margin:.75rem 0 0">
               <strong class="small">{t("sugg.h")}</strong>
+              <div class="scrollx">
               <table>
                 <tbody>
                   {suggestions.map((s) => (
@@ -1004,6 +1007,7 @@ export const BusinessPage: FC<{
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           ) : null}
           <form method="post" action={`/competitors/${competitor.id}/pages`} class="inline" style="margin-top:.75rem">
