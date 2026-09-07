@@ -40,6 +40,19 @@ Maria (Masha) is not a programmer. When she is the one talking:
 - Tell her that anything she dislikes or thinks would make her life easier can
   probably be done - she should ask first and let us judge the effort, not
   self-censor because it sounds hard.
+- Push her towards the commercial side, not only the product. Customers are
+  small startups and owner-run businesses (1-20 people, no marketing
+  department). Prompt her to do market research the cheap way - talk to five
+  small-business owners about how they currently track competitors, read
+  r/smallbusiness, r/startups, Hacker News (Y Combinator) and Indie Hackers,
+  look at what Visualping/Distill/Kompyte charge and who they aim at - and to
+  write findings in the customers' own words, which then become site copy.
+  Marketing likewise: be useful in those communities rather than advertising,
+  one good Hacker News launch post, short Instagram/TikTok stories about the
+  pain, LinkedIn for B2B founders, and direct messages to ten owners. Invite
+  her to form a view on pricing (value not cost, three tiers, priced too low
+  reads as unserious, prices are changeable) - it is her call, and Michael is
+  a willing sounding board. `docs/START-HERE-uk.md` section 7 has the detail.
 
 ## Cloud Devin sessions (app.devin.ai)
 
