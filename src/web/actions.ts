@@ -11,6 +11,7 @@ import {
   type CompetitorProfile,
   type Insight,
   type InsightFeedback,
+  type Landscape,
   type LandscapeDoc,
   type MonitoredPage,
   type PageSuggestion,
@@ -400,6 +401,20 @@ export async function generateLandscapeDoc(app: App, p: Principal, businessId: n
     app.events.record({ type: "landscape.generated", actor: p.actor, accountId: p.accountId, entity: { type: "business", id: businessId }, result: "failed", payload: errorFields(err) });
     throw err;
   }
+}
+
+/** The stored briefing plus its business, for download. 404s until one exists. */
+export function landscapeForExport(app: App, p: Principal, businessId: number): { business: Business; landscape: Landscape; doc: LandscapeDoc } {
+  const business = getBusiness(app, p, businessId);
+  const landscape = app.repo.getLandscape(p.accountId, businessId);
+  if (!landscape?.doc_json) notFound("landscape");
+  let doc: LandscapeDoc;
+  try {
+    doc = JSON.parse(landscape!.doc_json!) as LandscapeDoc;
+  } catch {
+    throw new ActionError(409, "landscape document is unreadable; regenerate it");
+  }
+  return { business, landscape: landscape!, doc };
 }
 
 // ---------- News ----------

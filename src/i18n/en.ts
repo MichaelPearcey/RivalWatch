@@ -298,6 +298,11 @@ export const en = {
   "ls.opportunities": "Openings for you",
   "ls.threats": "Threats",
   "ls.actions": "Suggested next steps",
+  "ls.dl.word": "Download for Word",
+  "ls.dl.pdf": "Save as PDF",
+  "ls.doc.for": "Competitor briefing for {name}",
+  "ls.print.hint": "Your browser's print window will open — choose \"Save as PDF\" as the destination.",
+  "ls.print.button": "Print / Save as PDF",
 
   // page status
   "status.ACTIVE": "checking normally",

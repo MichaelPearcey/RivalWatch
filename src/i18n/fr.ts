@@ -344,6 +344,11 @@ export const fr: Record<keyof typeof en, string> = {
   "ls.opportunities": "Occasions pour vous",
   "ls.threats": "Menaces",
   "ls.actions": "Prochaines étapes suggérées",
+  "ls.dl.word": "Télécharger pour Word",
+  "ls.dl.pdf": "Enregistrer en PDF",
+  "ls.doc.for": "Panorama concurrentiel pour {name}",
+  "ls.print.hint": "La fenêtre d'impression de votre navigateur va s'ouvrir — choisissez « Enregistrer au format PDF ».",
+  "ls.print.button": "Imprimer / enregistrer en PDF",
 
   // page status
   "status.ACTIVE": "vérifiée normalement",

@@ -14,7 +14,8 @@ import { PLANS } from "../plans.js";
 import * as A from "./actions.js";
 import { adminOverview } from "./admin.js";
 import { createDemoSite } from "./demo-site.js";
-import { LANG_COOKIE, isLocale, resolveLocale, translator, type MessageKey, type Translate } from "../i18n/index.js";
+import { LANG_COOKIE, isLocale, resolveLocale, translator, type Locale, type MessageKey, type Translate } from "../i18n/index.js";
+import { landscapeFilename, renderLandscapeDocument } from "./landscape-doc.js";
 import { crawlerPage, privacyPolicy, termsOfService } from "../legal.js";
 import { MEMORY_KINDS } from "../memory.js";
 import { streamSSE } from "hono/streaming";
@@ -22,7 +23,7 @@ import { FounderPage } from "./founder-views.js";
 import { renderMarkdown } from "./md.js";
 import { AdminPage, BUSINESS_TABS, BusinessPage, BusinessesPage, ConsentPage, InsightDetailPage, LandingPage, LegalPage, LoginPage, PageDetailPage, PricingPage, SettingsPage, type BusinessTab } from "./views.js";
 
-type Env = { Variables: { principal: Principal | undefined; t: Translate } };
+type Env = { Variables: { principal: Principal | undefined; t: Translate; locale: Locale } };
 type Ctx = Context<Env>;
 
 const idParam = z.coerce.number().int().positive();
@@ -53,9 +54,11 @@ export function createWebApp(app: App) {
     c.set("principal", principal);
     const locale = resolveLocale({ cookie: getCookie(c, LANG_COOKIE), user: principal?.user.locale, acceptLanguage: c.req.header("accept-language") });
     c.set("t", translator(locale));
+    c.set("locale", locale);
     await next();
   });
   const T = (c: Ctx): Translate => c.get("t");
+  const localeOf = (c: Ctx): Locale => c.get("locale");
 
   /** Language switcher: remembers the choice in a functional cookie and, when signed in, on the user. */
   web.get("/lang", (c) => {
@@ -541,6 +544,20 @@ export function createWebApp(app: App) {
       return t("flash.landscape.done");
     });
   });
+  /** Word (.doc) download and a printable page the browser can save as PDF. */
+  ui.get("/b/:id/landscape.doc", (c) => {
+    const p = P(c);
+    const { business, landscape, doc } = A.landscapeForExport(app, p, id(c));
+    const html = renderLandscapeDocument({ t: T(c), business, landscape, doc, lang: localeOf(c) });
+    c.header("content-type", "application/msword; charset=utf-8");
+    c.header("content-disposition", contentDisposition(landscapeFilename(business.name, "doc")));
+    return c.body(html);
+  });
+  ui.get("/b/:id/landscape/print", (c) => {
+    const p = P(c);
+    const { business, landscape, doc } = A.landscapeForExport(app, p, id(c));
+    return c.html(renderLandscapeDocument({ t: T(c), business, landscape, doc, print: true, lang: localeOf(c) }));
+  });
   ui.post("/b/:id/competitors", async (c) => {
     const bid = id(c);
     return tryUi(c, `/b/${bid}`, async () => {
@@ -826,6 +843,12 @@ function isJson(c: Ctx): boolean {
 function messageOf(err: unknown): string {
   if (err instanceof z.ZodError) return err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
   return err instanceof Error ? err.message : String(err);
+}
+
+/** RFC 5987: business names carry non-ASCII, so send an ASCII fallback plus the real name. */
+function contentDisposition(filename: string): string {
+  const ascii = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "");
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
 /** "2 no change, 1 could not be fetched" - never the raw pipeline enum. */

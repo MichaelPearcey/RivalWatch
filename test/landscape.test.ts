@@ -107,6 +107,43 @@ describe("competitor landscape", () => {
     expect(page.text).not.toContain("Not known yet");
   });
 
+  it("downloads the briefing as a Word document and a printable page", async () => {
+    t = testApp();
+    const f = await fixture(t);
+    const before = await html(t.web, `/b/${f.business.id}/landscape.doc`, f.session);
+    expect(before.status).toBe(404);
+
+    await html(t.web, `/b/${f.business.id}/landscape`, f.session, { method: "POST" });
+    const doc = await t.web.request(`http://localhost/b/${f.business.id}/landscape.doc`, { headers: { cookie: f.session.cookie } });
+    expect(doc.headers.get("content-type")).toContain("application/msword");
+    expect(doc.headers.get("content-disposition")).toContain('attachment; filename="rivalwatch-landscape-Bright-Pixel-');
+    const body = await doc.text();
+    expect(body).toContain("Competitor briefing for Bright Pixel");
+    expect(body).toContain("Acme Studio");
+    expect(body).not.toContain("<button");
+
+    const print = await html(t.web, `/b/${f.business.id}/landscape/print`, f.session);
+    expect(print.text).toContain("window.print()");
+    expect(print.text).toContain("Acme Studio");
+
+    const intruder = await login(t.web, "nosy@a.co");
+    expect((await html(t.web, `/b/${f.business.id}/landscape.doc`, intruder)).status).toBe(404);
+  });
+
+  it("escapes competitor text in the downloaded document", async () => {
+    t = testApp();
+    const f = await fixture(t);
+    await html(t.web, `/b/${f.business.id}/landscape`, f.session, { method: "POST" });
+    const acct = t.app.repo.getUserByEmail("owner@rivalwatch.test")!.account_id;
+    const stored = t.app.repo.getLandscape(acct, f.business.id)!;
+    const parsed = JSON.parse(stored.doc_json!) as { headline: string };
+    parsed.headline = '<script>alert("x")</script>';
+    t.app.repo.setLandscape({ account_id: acct, business_id: f.business.id, status: "ready", doc: parsed as never, competitorCount: 1 });
+    const out = await html(t.web, `/b/${f.business.id}/landscape.doc`, f.session);
+    expect(out.text).not.toContain("<script>alert");
+    expect(out.text).toContain("&lt;script&gt;");
+  });
+
   it("is tenant-scoped: another account cannot generate or read someone else's briefing", async () => {
     t = testApp();
     const f = await fixture(t);

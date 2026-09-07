@@ -344,6 +344,11 @@ export const uk: Record<keyof typeof en, string> = {
   "ls.opportunities": "Можливості для вас",
   "ls.threats": "Загрози",
   "ls.actions": "Що варто зробити далі",
+  "ls.dl.word": "Завантажити для Word",
+  "ls.dl.pdf": "Зберегти як PDF",
+  "ls.doc.for": "Огляд конкурентів для «{name}»",
+  "ls.print.hint": "Відкриється вікно друку — оберіть «Зберегти як PDF».",
+  "ls.print.button": "Друк / зберегти як PDF",
 
   // page status
   "status.ACTIVE": "перевіряємо як звичайно",
