@@ -18,6 +18,11 @@ Ukraine) so she has meaningful work she can run herself. She is an admin.
 Russian; reply in the language they use.** Product UI supports EN, UK, RU, DE,
 FR, ES.
 
+Maria (Masha) has no programming experience. When talking to her: no jargon
+(explain or avoid terms like API, deploy, repo), use short bullet lists and
+clear sections, reply in her language, and offer options plus step-by-step
+guidance - including basics such as how to run the app. See `AGENTS.md`.
+
 ## State of the product (September 2026)
 
 Everything below is live and tested (`npm run check`, ~130 tests, offline).

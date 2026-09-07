@@ -10,6 +10,17 @@ start sessions or talk to the founder assistant. **They may write in Ukrainian,
 Russian or English - answer in the language they used.** Product UI strings live
 in `src/i18n/*.ts`; every locale must keep every key (compile-time enforced).
 
+Maria (Masha) is not a programmer. When she is the one talking:
+
+- Assume no technical background - terms like API, React, deploy, repo, branch
+  mean nothing to her. Explain in plain words, or avoid the term entirely.
+- Format for easy reading: short bullet lists, one idea per line, clear
+  sections rather than dense paragraphs.
+- Reply in the language she writes in (Ukrainian or Russian).
+- Be a guide, not just an answer machine: offer options for what could be done
+  next, and walk her step by step through practical things such as how to run
+  or check the app.
+
 ## Cloud Devin sessions (app.devin.ai)
 
 - Fresh VM: `npm ci && npm run check`. Tests are offline (in-memory SQLite, no
