@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { LandscapeDoc } from "../db/repo.js";
+import { translator, type Translate } from "../i18n/index.js";
 import type { JsonLlm } from "./llm.js";
 
 /** One competitor as the landscape generator sees them: profile plus what we recently observed. */
@@ -74,25 +75,29 @@ export function buildLandscapePrompt(business: { name: string; description: stri
   ].join("\n");
 }
 
-/** Deterministic fallback so the page is never empty when the model is unavailable or capped. */
-export function heuristicLandscape(business: { name: string }, competitors: LandscapeInput[]): LandscapeDoc {
+/**
+ * Deterministic fallback so the page is never empty when the model is unavailable
+ * or capped. Written in the owner's language, and careful to say "we have not read
+ * this yet" rather than asserting a competitor publishes no prices.
+ */
+export function heuristicLandscape(business: { name: string }, competitors: LandscapeInput[], t: Translate = translator("en")): LandscapeDoc {
   const moving = competitors.filter((c) => c.recent_changes.length + c.recent_news.length > 0);
-  const priced = competitors.filter((c) => c.pricing && !/^unknown$/i.test(c.pricing));
+  const unpriced = competitors.filter((c) => !c.pricing || /^unknown$/i.test(c.pricing));
   return {
-    headline: competitors.length ? `${competitors.length} competitor(s) tracked for ${business.name}, ${moving.length} active recently` : `No competitors tracked for ${business.name} yet`,
+    headline: competitors.length ? t("lsh.headline", { n: competitors.length, name: business.name, moving: moving.length }) : t("lsh.headline.none", { name: business.name }),
     summary: competitors.length
-      ? `Assembled from what we have collected so far: ${competitors.map((c) => c.name).join(", ")}. ${priced.length} of ${competitors.length} publish pricing we can read, and ${moving.length} changed something or appeared in the news recently.`
-      : "Add a competitor and we will build this briefing from their pages, changes and news.",
+      ? t("lsh.summary", { names: competitors.map((c) => c.name).join(", "), priced: competitors.length - unpriced.length, n: competitors.length, moving: moving.length })
+      : t("lsh.summary.none"),
     competitors: competitors.map((c) => ({
       name: c.name,
-      positioning: c.positioning || "Not known yet",
-      pricing: c.pricing || "Not known yet",
-      strengths: c.usps.slice(0, 3).join("; ") || "Not known yet",
-      watch_out: [...c.recent_changes, ...c.recent_news].slice(0, 2).join("; ") || "Nothing recent",
+      positioning: c.positioning || t("lsh.unknown"),
+      pricing: c.pricing || t("lsh.unknown"),
+      strengths: c.usps.slice(0, 3).join("; ") || t("lsh.unknown"),
+      watch_out: [...c.recent_changes, ...c.recent_news].slice(0, 2).join("; ") || t("lsh.nothing"),
     })),
-    opportunities: priced.length < competitors.length ? ["Some competitors do not publish prices; clear public pricing is a differentiator."] : [],
-    threats: moving.map((c) => `${c.name} has been active recently: ${[...c.recent_changes, ...c.recent_news][0] ?? ""}`).slice(0, 3),
-    recommendations: ["Add each competitor's pricing page so price moves are caught automatically.", "Rate the insights useful or not useful so the analysis learns what you care about."],
+    opportunities: unpriced.length ? [t("lsh.opp.pricing", { n: unpriced.length })] : [],
+    threats: moving.map((c) => t("lsh.threat.active", { name: c.name, what: [...c.recent_changes, ...c.recent_news][0] ?? "" })).slice(0, 3),
+    recommendations: [...(unpriced.length ? [t("lsh.rec.pricing", { names: unpriced.map((c) => c.name).join(", ") })] : []), t("lsh.rec.rate")],
     provider: "heuristic",
   };
 }
@@ -101,9 +106,9 @@ export async function generateLandscape(
   llm: JsonLlm,
   business: { name: string; description: string | null; pricing: string | null },
   competitors: LandscapeInput[],
-  opts: { language?: string; accountId?: number | null } = {},
+  opts: { language?: string; accountId?: number | null; t?: Translate } = {},
 ): Promise<LandscapeDoc> {
-  const fallback = heuristicLandscape(business, competitors);
+  const fallback = heuristicLandscape(business, competitors, opts.t);
   if (competitors.length === 0) return fallback;
   const result = await llm.complete("competitor_landscape", SYSTEM, buildLandscapePrompt(business, competitors, opts.language), LandscapeSchema, { maxTokens: 1600, accountId: opts.accountId ?? null });
   if (!result) return fallback;

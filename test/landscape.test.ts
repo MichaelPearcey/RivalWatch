@@ -50,7 +50,9 @@ describe("competitor landscape", () => {
     expect(doc.competitors[1]!.pricing).toBe("Not known yet");
     expect(doc.competitors[1]!.watch_out).toBe("Nothing recent");
     expect(doc.threats.join(" ")).toContain("Acme Studio");
-    expect(doc.opportunities.join(" ")).toContain("do not publish prices");
+    // Unknown pricing must read as "we have not read it", never as "they publish none".
+    expect(doc.opportunities.join(" ")).toContain("have not read prices for 1");
+    expect(doc.recommendations.join(" ")).toContain("Quiet Co");
   });
 
   it("the prompt carries our own pricing, tags each competitor and asks for the owner's language", () => {
@@ -95,6 +97,16 @@ describe("competitor landscape", () => {
     expect(stored.provider).toBe("heuristic");
   });
 
+  it("writes the fallback briefing in the owner's language", async () => {
+    t = testApp();
+    const f = await fixture(t);
+    await json(t.web, "/api/me", { method: "PATCH", session: f.session, body: JSON.stringify({ locale: "uk" }) });
+    await html(t.web, `/b/${f.business.id}/landscape`, f.session, { method: "POST" });
+    const page = await html(t.web, `/b/${f.business.id}?tab=landscape`, f.session);
+    expect(page.text).toContain("Поки невідомо");
+    expect(page.text).not.toContain("Not known yet");
+  });
+
   it("is tenant-scoped: another account cannot generate or read someone else's briefing", async () => {
     t = testApp();
     const f = await fixture(t);
@@ -137,6 +149,16 @@ describe("business dashboard", () => {
     const bogus = await html(t.web, `/b/${f.business.id}?tab=klingon`, f.session);
     expect(bogus.status).toBe(200);
     expect(bogus.text).toContain("At a glance");
+  });
+
+  it("never shows raw pipeline enums in the scan feedback", async () => {
+    t = testApp();
+    const f = await fixture(t);
+    await json(t.web, "/api/me", { method: "PATCH", session: f.session, body: JSON.stringify({ locale: "uk" }) });
+    const scan = await html(t.web, `/b/${f.business.id}/scan`, f.session, { method: "POST" });
+    const flash = decodeURIComponent(scan.location ?? "");
+    expect(flash).not.toMatch(/first_snapshot|pending_confirmation|fetch_failed|unchanged/);
+    expect(flash).toContain("копі");
   });
 
   it("renders the dashboard in the owner's language", async () => {

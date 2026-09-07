@@ -15,7 +15,7 @@ import {
   type MonitoredPage,
   type PageSuggestion,
 } from "../db/repo.js";
-import { LANGUAGE_NAMES, isLocale, type Locale } from "../i18n/index.js";
+import { LANGUAGE_NAMES, isLocale, translator, type Locale } from "../i18n/index.js";
 import { errorFields, log } from "../logger.js";
 import type { ProcessOutcome } from "../monitor/pipeline.js";
 import { PLANS, getPlan } from "../plans.js";
@@ -341,9 +341,13 @@ export function resolveSuggestion(app: App, p: Principal, id: number, accept: bo
 
 // ---------- Competitor landscape ----------
 
-function ownerLanguage(app: App, accountId: number): string {
+function ownerLocale(app: App, accountId: number): Locale {
   const owner = app.repo.listUsers(accountId).find((u) => u.role === "owner");
-  return LANGUAGE_NAMES[(isLocale(owner?.locale) ? owner!.locale : "en") as Locale];
+  return isLocale(owner?.locale) ? owner!.locale : "en";
+}
+
+function ownerLanguage(app: App, accountId: number): string {
+  return LANGUAGE_NAMES[ownerLocale(app, accountId)];
 }
 
 /**
@@ -380,6 +384,7 @@ export async function generateLandscapeDoc(app: App, p: Principal, businessId: n
     const doc = await generateLandscape(app.llm, { name: business.name, description: business.description, pricing: business.pricing_notes }, inputs, {
       language: ownerLanguage(app, p.accountId),
       accountId: p.accountId,
+      t: translator(ownerLocale(app, p.accountId)),
     });
     app.repo.setLandscape({ account_id: p.accountId, business_id: businessId, status: "ready", doc, competitorCount: competitors.length });
     app.events.record({

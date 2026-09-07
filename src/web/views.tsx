@@ -22,7 +22,7 @@ import type {
   User,
 } from "../db/repo.js";
 import type { EventRow } from "../events.js";
-import { LOCALES, translator, type Locale, type Translate } from "../i18n/index.js";
+import { LOCALES, translator, type Locale, type MessageKey, type Translate } from "../i18n/index.js";
 import { COMPANY, LEGAL_VERSION } from "../legal.js";
 import { PLANS, getPlan } from "../plans.js";
 import { renderMarkdown } from "./md.js";
@@ -584,7 +584,7 @@ const Stat: FC<{ n: number | string; label: string }> = ({ n, label }) => (
 );
 
 const FeedTable: FC<{ t: Translate; items: FeedItem[]; competitorNames: Record<number, string> }> = ({ t, items, competitorNames }) => (
-  <div class="card flat" style="overflow-x:auto">
+  <div class="card flat scrollx">
     <table>
       <thead>
         <tr>
@@ -640,7 +640,7 @@ const CompetitorTable: FC<{
   rows: { competitor: Competitor; pages: MonitoredPage[]; news: NewsItem[] }[];
   changeCounts: Record<number, number>;
 }> = ({ t, rows, changeCounts }) => (
-  <div class="card flat" style="overflow-x:auto">
+  <div class="card flat scrollx">
     <table>
       <thead>
         <tr>
@@ -715,7 +715,7 @@ const LandscapeCard: FC<{ t: Translate; businessId: number; landscape: Landscape
           </p>
           <h3 style="margin:.6rem 0 .2rem">{doc.headline}</h3>
           <p style="margin:0 0 .8rem">{doc.summary}</p>
-          <div style="overflow-x:auto">
+          <div class="scrollx">
             <table>
               <thead>
                 <tr>
@@ -948,7 +948,7 @@ export const BusinessPage: FC<{
                   </td>
                   <td>{t(`kind.${p.kind}`)}</td>
                   <td class="muted small">
-                    {t("page.every", { interval: humanMinutes(p.check_interval_minutes) })}
+                    {t("page.every", { interval: humanMinutes(t, p.check_interval_minutes) })}
                     <br />
                     {t("page.last", { date: fmtDate(p.last_checked_at) })}
                   </td>
@@ -1221,13 +1221,13 @@ export const PageDetailPage: FC<{ principal: Principal; t: Translate; page: Moni
     <p class="row small">
       <StatusBadge page={page} t={t} />
       <span class="muted">
-        {competitor.name} · {t(`kind.${page.kind}`)} · {t("page.every", { interval: humanMinutes(page.check_interval_minutes) })} · {t("pd.next", { date: fmtDate(page.next_check_at) })} · {t("pd.failures", { n: page.consecutive_failures })} ·{" "}
+        {competitor.name} · {t(`kind.${page.kind}`)} · {t("page.every", { interval: humanMinutes(t, page.check_interval_minutes) })} · {t("pd.next", { date: fmtDate(page.next_check_at) })} · {t("pd.failures", { n: page.consecutive_failures })} ·{" "}
         {t("pd.since", { date: fmtDate(page.status_since) })}
       </span>
     </p>
     {page.status_message ? <div class="card alert small">{page.status_message}</div> : null}
     <h2>{t("pd.snapshots", { n: snapshots.length })}</h2>
-    <div class="card flat">
+    <div class="card flat scrollx">
       <table>
         <thead>
           <tr>
@@ -1250,16 +1250,16 @@ export const PageDetailPage: FC<{ principal: Principal; t: Translate; page: Moni
       </table>
     </div>
     <h2>{t("pd.changes", { n: changes.length })}</h2>
-    <div class="card flat">
+    <div class="card flat scrollx">
       <table>
         <tbody>
           {changes.map((c) => (
             <tr>
               <td>{fmtDate(c.detected_at)}</td>
               <td>{t("pd.significance", { n: c.significance })}</td>
-              <td>{JSON.parse(c.signals_json).join(", ")}</td>
+              <td>{signalLabels(t, c.signals_json)}</td>
               <td>
-                <span class="badge">{c.analysis_status.replace(/_/g, " ")}</span>
+                <span class="badge">{t(`chg.${c.analysis_status}` as MessageKey)}</span>
               </td>
             </tr>
           ))}
@@ -1816,8 +1816,17 @@ export const EventsTable: FC<{ events: EventRow[] }> = ({ events }) => (
   </table>
 );
 
-function humanMinutes(m: number): string {
-  if (m % 1440 === 0) return `${m / 1440}d`;
-  if (m % 60 === 0) return `${m / 60}h`;
-  return `${m}m`;
+/** Detector signal names ("price", "large_edit") are internal; show them translated. */
+function signalLabels(t: Translate, json: string): string {
+  try {
+    return (JSON.parse(json) as string[]).map((s) => t(`sig.${s}` as MessageKey)).join(", ");
+  } catch {
+    return "";
+  }
+}
+
+function humanMinutes(t: Translate, m: number): string {
+  if (m % 1440 === 0) return t("dur.d", { n: m / 1440 });
+  if (m % 60 === 0) return t("dur.h", { n: m / 60 });
+  return t("dur.m", { n: m });
 }

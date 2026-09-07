@@ -14,7 +14,7 @@ import { PLANS } from "../plans.js";
 import * as A from "./actions.js";
 import { adminOverview } from "./admin.js";
 import { createDemoSite } from "./demo-site.js";
-import { LANG_COOKIE, isLocale, resolveLocale, translator, type Translate } from "../i18n/index.js";
+import { LANG_COOKIE, isLocale, resolveLocale, translator, type MessageKey, type Translate } from "../i18n/index.js";
 import { crawlerPage, privacyPolicy, termsOfService } from "../legal.js";
 import { MEMORY_KINDS } from "../memory.js";
 import { streamSSE } from "hono/streaming";
@@ -553,7 +553,7 @@ export function createWebApp(app: App) {
     const bid = id(c);
     return tryUi(c, `/b/${bid}`, async () => {
       const results = await A.scanBusiness(app, P(c), bid);
-      return T(c)("flash.scan.done", { n: results.length, summary: summarise(results.map((r) => r.outcome.status)) });
+      return T(c)("flash.scan.done", { n: results.length, summary: summarise(T(c), results.map((r) => r.outcome.status)) });
     });
   });
   ui.post("/b/:id/digest", async (c) => {
@@ -619,7 +619,7 @@ export function createWebApp(app: App) {
     return tryUi(c, `/b/${competitor.business_id}`, async () => {
       if (verb === "scan") {
         const o = await A.scanPage(app, p, page.id);
-        return T(c)("flash.scan.page", { status: `${o.status}${"message" in o ? ` (${o.message})` : ""}${"confirmAfter" in o ? ` — ${o.confirmAfter.slice(0, 16)} UTC` : ""}` });
+        return T(c)("flash.scan.page", { status: `${T(c)(`out.${o.status}` as MessageKey)}${"message" in o ? ` (${o.message})` : ""}${"confirmAfter" in o ? ` — ${o.confirmAfter.slice(0, 16)} UTC` : ""}` });
       }
       if (verb === "pause") A.setPagePaused(app, p, page.id, true);
       else if (verb === "resume") A.setPagePaused(app, p, page.id, false);
@@ -828,8 +828,9 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function summarise(statuses: string[]): string {
+/** "2 no change, 1 could not be fetched" - never the raw pipeline enum. */
+function summarise(t: Translate, statuses: string[]): string {
   const counts = new Map<string, number>();
   for (const s of statuses) counts.set(s, (counts.get(s) ?? 0) + 1);
-  return [...counts].map(([k, v]) => `${v} ${k}`).join(", ") || "nothing to scan";
+  return [...counts].map(([k, v]) => `${v} ${t(`out.${k}` as MessageKey)}`).join(", ") || t("out.nothing");
 }
