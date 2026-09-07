@@ -171,8 +171,8 @@ describe("business dashboard", () => {
     const overview = await html(t.web, `/b/${f.business.id}`, f.session);
     expect(overview.status).toBe(200);
     expect(overview.text).toContain("At a glance");
-    expect(overview.text).toContain("competitors watched");
-    expect(overview.text).toContain("pages monitored");
+    expect(overview.text).toContain("competitor watched"); // one competitor: singular
+    expect(overview.text).toMatch(/pages? monitored/);
 
     const news = await html(t.web, `/b/${f.business.id}?tab=news`, f.session);
     expect(news.text).toContain("Everything new, in one place");

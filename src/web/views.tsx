@@ -62,7 +62,7 @@ export const Layout: FC<{ title: string; children?: unknown; flash?: string | un
           {principal ? (
             <>
               <a class="link" href="/">{t("nav.dashboard")}</a>
-              <a class="link hide-sm" href="/settings">{t("nav.settings")}</a>
+              <a class="link" href="/settings">{t("nav.settings")}</a>
               {principal.isAdmin ? <a class="link" href="/admin">{t("nav.admin")}</a> : null}
               {principal.isAdmin ? <a class="link hide-sm" href="/admin/founder">Founder</a> : null}
             </>
@@ -321,9 +321,9 @@ export const PricingPage: FC<{ principal?: Principal | undefined; t: Translate }
             {p.price_pence_monthly ? <small>{t("pricing.month")}</small> : null}
           </div>
           <ul class="tick">
-            <li>{t("pricing.competitors", { n: p.max_competitors })}</li>
-            <li>{t("pricing.pages", { n: p.max_pages_per_competitor })}</li>
-            <li>{p.check_interval_minutes >= 1440 ? t("pricing.every.days", { n: p.check_interval_minutes / 1440 }) : t("pricing.every.hours", { n: p.check_interval_minutes / 60 })}</li>
+            <li>{t.plural("pricing.competitors", p.max_competitors)}</li>
+            <li>{t.plural("pricing.pages", p.max_pages_per_competitor)}</li>
+            <li>{p.check_interval_minutes >= 1440 ? t.plural("pricing.every.days", p.check_interval_minutes / 1440) : t.plural("pricing.every.hours", p.check_interval_minutes / 60)}</li>
             <li>{t("pricing.ai")}</li>
             <li>{t("pricing.digest")}</li>
             {p.features.alerts ? <li>{t("pricing.alerts")}</li> : null}
@@ -516,7 +516,7 @@ export const BusinessesPage: FC<{ principal: Principal; t: Translate; businesses
     <form method="post" action="/b" class="card">
       <div class="grid g2">
         <label>
-          {t("biz.name")} <input name="name" required placeholder="e.g. Bright Pixel Design" />
+          {t("biz.name")} <input name="name" required placeholder={t("biz.name.ph")} />
         </label>
         <label>
           {t("biz.website")} <input name="website" type="url" placeholder="https://" />
@@ -528,7 +528,7 @@ export const BusinessesPage: FC<{ principal: Principal; t: Translate; businesses
       </label>
       <label>
         {t("biz.pricing")}
-        <textarea name="pricing_notes" placeholder="Starter £25/month, Studio £55/month" />
+        <textarea name="pricing_notes" placeholder={t("biz.pricing.ph")} />
       </label>
       <p>
         <button type="submit">{t("biz.create")}</button>
@@ -799,6 +799,8 @@ export const BusinessPage: FC<{
   const recent = feed.filter((f) => f.at >= since30);
   const changeCounts: Record<number, number> = {};
   for (const f of recent) if (f.kind === "change") changeCounts[f.competitorId] = (changeCounts[f.competitorId] ?? 0) + 1;
+  const changeCount = recent.filter((f) => f.kind === "change").length;
+  const newsCount = recent.filter((f) => f.kind === "news").length;
   const noProfile = competitors.filter(({ competitor }) => competitor.profile_status !== "ready").length;
   const tabHref = (name: BusinessTab) => `/b/${business.id}?tab=${name}`;
   return (
@@ -826,10 +828,10 @@ export const BusinessPage: FC<{
         <>
           <h2 style="margin:1.25rem 0 .5rem">{t("ov.h")}</h2>
           <div class="grid g4" style="gap:.6rem">
-            <Stat n={competitors.length} label={t("ov.competitors")} />
-            <Stat n={pages.length} label={t("ov.pages")} />
-            <Stat n={recent.filter((f) => f.kind === "change").length} label={t("ov.insights")} />
-            <Stat n={recent.filter((f) => f.kind === "news").length} label={t("ov.news")} />
+            <Stat n={competitors.length} label={t.plural("ov.competitors", competitors.length)} />
+            <Stat n={pages.length} label={t.plural("ov.pages", pages.length)} />
+            <Stat n={changeCount} label={t.plural("ov.insights", changeCount)} />
+            <Stat n={newsCount} label={t.plural("ov.news", newsCount)} />
           </div>
           <div class="card">
             <h2 style="margin:0 0 .4rem">{t("ov.attention.h")}</h2>
@@ -1000,7 +1002,7 @@ export const BusinessPage: FC<{
                       <td>
                         <span class="badge">{t(`kind.${s.kind}`)}</span>
                       </td>
-                      <td class="muted small">{s.reason}</td>
+                      <td class="muted small">{suggestionReason(t, s.reason)}</td>
                       <td style="white-space:nowrap;text-align:right">
                         <form method="post" action={`/suggestions/${s.id}/accept`} style="display:inline">
                           <button class="tiny" type="submit">
@@ -1042,7 +1044,7 @@ export const BusinessPage: FC<{
           <h2>{t("comp.add.h")}</h2>
           <form method="post" action={`/b/${business.id}/competitors`} class="card inline">
             <label>
-              {t("comp.add.name")} <input name="name" required placeholder="Acme Studio" />
+              {t("comp.add.name")} <input name="name" required placeholder={t("comp.add.name.ph")} />
             </label>
             <label class="grow">
               {t("comp.add.website")} <input name="website" type="url" required placeholder="https://acme.example" />
@@ -1829,6 +1831,15 @@ export const EventsTable: FC<{ events: EventRow[] }> = ({ events }) => (
     </tbody>
   </table>
 );
+
+/** Suggestion reasons are stored as `both|path|text` + the matched text; older rows hold free English text. */
+function suggestionReason(t: Translate, reason: string | null): string {
+  if (!reason) return "";
+  const [code = "", ...rest] = reason.split(":");
+  const text = rest.join(":");
+  if (code === "both" || code === "path" || code === "text") return t(`sugg.reason.${code}`, { text });
+  return reason;
+}
 
 /** Detector signal names ("price", "large_edit") are internal; show them translated. */
 function signalLabels(t: Translate, json: string): string {

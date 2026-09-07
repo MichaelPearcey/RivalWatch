@@ -179,7 +179,7 @@ export function createWebApp(app: App) {
     const body = await bodyOf(c);
     const { email, password } = z.object({ email: z.string().email().max(254), password: z.string().max(128) }).parse(body);
     try {
-      const { sessionToken } = await auth.signupWithPassword(email, password, ipOf(c));
+      const { sessionToken } = await auth.signupWithPassword(email, password, ipOf(c), localeOf(c));
       setSession(c, sessionToken);
       if (isJson(c)) return c.json({ ok: true }, 201);
       return c.redirect(safeNext(body.next));
@@ -203,7 +203,7 @@ export function createWebApp(app: App) {
   web.get("/auth/verify", (c) => {
     const token = c.req.query("token") ?? "";
     try {
-      const { sessionToken } = auth.verify(token);
+      const { sessionToken } = auth.verify(token, localeOf(c));
       setSession(c, sessionToken);
       return c.redirect("/");
     } catch (err) {
@@ -515,7 +515,7 @@ export function createWebApp(app: App) {
       const msg = await fn();
       return back(c, path, msg ?? undefined);
     } catch (err) {
-      return back(c, path, messageOf(err));
+      return back(c, path, messageOf(err, T(c)));
     }
   };
 
@@ -840,8 +840,9 @@ function isJson(c: Ctx): boolean {
   return (c.req.header("content-type") ?? "").includes("application/json");
 }
 
-function messageOf(err: unknown): string {
-  if (err instanceof z.ZodError) return err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+/** Zod diagnostics are English and developer-facing; browsers get one translated sentence instead. */
+function messageOf(err: unknown, t: Translate): string {
+  if (err instanceof z.ZodError) return t("err.validation");
   return err instanceof Error ? err.message : String(err);
 }
 

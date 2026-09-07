@@ -15,7 +15,36 @@ const MESSAGES: Record<Locale, Record<MessageKey, string>> = { en, uk, ru, de, f
 /** Names the analyser prompt uses ("Write in ..."). */
 export const LANGUAGE_NAMES: Record<Locale, string> = { en: "English", uk: "Ukrainian", ru: "Russian", de: "German", fr: "French", es: "Spanish" };
 
-export type Translate = ((key: MessageKey, vars?: Record<string, string | number>) => string) & { locale: Locale };
+/**
+ * Keys whose text must agree with a number. Each one exists three times in every
+ * locale table (`.one`, `.few`, `.many`); Slavic locales need all three, the rest
+ * repeat the plural form. Call them through `t.plural(key, n)`.
+ */
+export const PLURAL_KEYS = ["ov.competitors", "ov.pages", "ov.insights", "ov.news", "pricing.competitors", "pricing.pages", "pricing.every.days", "pricing.every.hours"] as const;
+export type PluralKey = (typeof PLURAL_KEYS)[number];
+type PluralForm = "one" | "few" | "many";
+
+/** Compile-time proof that every form of every plural key exists in the tables. */
+type MissingPluralForms = Exclude<`${PluralKey}.${PluralForm}`, MessageKey>;
+const _pluralFormsComplete: [MissingPluralForms] extends [never] ? true : ["missing plural keys", MissingPluralForms] = true;
+void _pluralFormsComplete;
+
+export type Translate = ((key: MessageKey, vars?: Record<string, string | number>) => string) & {
+  locale: Locale;
+  plural: (key: PluralKey, n: number, vars?: Record<string, string | number>) => string;
+};
+
+const PLURAL_RULES = new Map<Locale, Intl.PluralRules>();
+
+function pluralForm(locale: Locale, n: number): PluralForm {
+  let rules = PLURAL_RULES.get(locale);
+  if (!rules) {
+    rules = new Intl.PluralRules(locale);
+    PLURAL_RULES.set(locale, rules);
+  }
+  const category = rules.select(n);
+  return category === "one" ? "one" : category === "few" ? "few" : "many";
+}
 
 export function isLocale(v: unknown): v is Locale {
   return typeof v === "string" && (LOCALES as readonly string[]).includes(v);
@@ -29,6 +58,7 @@ export function translator(locale: Locale): Translate {
     return s;
   }) as Translate;
   t.locale = locale;
+  t.plural = (key, n, vars) => t(`${key}.${pluralForm(locale, n)}` as MessageKey, { n, ...vars });
   return t;
 }
 

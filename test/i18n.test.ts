@@ -20,9 +20,19 @@ describe("translations", () => {
   });
 
   it("interpolates placeholders and falls back to English for unknown locales", () => {
-    expect(translator("de")("pricing.competitors", { n: 10 })).toBe("Bis zu 10 Wettbewerber");
+    expect(translator("de").plural("pricing.competitors", 10)).toBe("Bis zu 10 Wettbewerber");
     expect(translator("uk")("dash.plan", { plan: "Pro" })).toBe("План Pro");
     expect(translator("xx" as never)("nav.pricing")).toBe("Pricing");
+  });
+
+  it("picks the plural form the reader's language needs", () => {
+    const uk = translator("uk");
+    expect(uk.plural("ov.competitors", 1)).toBe("конкурент під наглядом");
+    expect(uk.plural("ov.competitors", 2)).toBe("конкуренти під наглядом");
+    expect(uk.plural("ov.competitors", 5)).toBe("конкурентів під наглядом");
+    expect(translator("ru").plural("pricing.every.days", 1)).toBe("Проверка каждый день");
+    expect(translator("en").plural("pricing.pages", 1)).toBe("1 page per competitor");
+    expect(translator("en").plural("pricing.pages", 3)).toBe("3 pages per competitor");
   });
 
   it("resolves locale: query > cookie > user > Accept-Language > default", () => {
@@ -74,6 +84,16 @@ describe("language in the app", () => {
     // The switcher also persists to the user when signed in.
     await t.web.request(`${t.base}/lang?lang=es`, { headers: { cookie: s.cookie } });
     expect(t.app.repo.getUserByEmail("fr@a.co")!.locale).toBe("es");
+  });
+
+  it("keeps the language chosen before signing up, so the first AI output is in it", async () => {
+    const res = await t.web.request(`${t.base}/auth/signup`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: "rw_lang=uk" },
+      body: new URLSearchParams({ email: "new-uk@a.co", password: "correct horse battery staple" }).toString(),
+    });
+    expect(res.status).toBe(302);
+    expect(t.app.repo.getUserByEmail("new-uk@a.co")!.locale).toBe("uk");
   });
 
   it("legal pages stay English but carry a notice in other languages", async () => {

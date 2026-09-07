@@ -283,10 +283,10 @@ export class Repo {
   updateAccountPlan(id: number, plan: string): void {
     this.db.prepare("UPDATE accounts SET plan = ? WHERE id = ?").run(plan, id);
   }
-  createUser(input: { account_id: number; email: string; role?: User["role"]; is_admin?: boolean }): User {
+  createUser(input: { account_id: number; email: string; role?: User["role"]; is_admin?: boolean; locale?: string }): User {
     return this.db
-      .prepare(`INSERT INTO users (account_id, email, role, is_admin) VALUES (?, ?, ?, ?) RETURNING *`)
-      .get(input.account_id, input.email.toLowerCase(), input.role ?? "owner", input.is_admin ? 1 : 0) as unknown as User;
+      .prepare(`INSERT INTO users (account_id, email, role, is_admin, locale) VALUES (?, ?, ?, ?, ?) RETURNING *`)
+      .get(input.account_id, input.email.toLowerCase(), input.role ?? "owner", input.is_admin ? 1 : 0, input.locale ?? null) as unknown as User;
   }
   getUser(id: number): User | undefined {
     return this.db.prepare("SELECT * FROM users WHERE id = ?").get(id) as User | undefined;

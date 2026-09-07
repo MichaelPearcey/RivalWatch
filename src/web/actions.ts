@@ -238,9 +238,8 @@ export async function profileCompetitor(app: App, p: Principal, competitorId: nu
       const outcome = await app.sources.get("website")?.fetch({ ...pages[0]!, url: competitor.website, kind: "home" } as MonitoredPage);
       if (outcome?.ok) sources.push({ url: competitor.website, kind: "home", title: outcome.title, text: outcome.text });
     }
-    const owner = app.repo.listUsers(p.accountId).find((u) => u.role === "owner");
-    const language = LANGUAGE_NAMES[(isLocale(owner?.locale) ? owner!.locale : "en") as Locale];
-    const profile = await generateProfile(app.llm, competitor.name, competitor.website, sources, { language, accountId: p.accountId });
+    const locale = ownerLocale(app, p.accountId);
+    const profile = await generateProfile(app.llm, competitor.name, competitor.website, sources, { language: LANGUAGE_NAMES[locale], accountId: p.accountId, t: translator(locale) });
     app.repo.setCompetitorProfile(competitorId, "ready", profile);
     app.events.record({ type: "competitor.profiled", actor: "system", accountId: p.accountId, entity: { type: "competitor", id: competitorId }, payload: { provider: profile.provider, sources: profile.sources.length, usps: profile.usps.length } });
     return profile;
