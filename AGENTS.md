@@ -42,14 +42,16 @@ Maria (Masha) is not a programmer. When she is the one talking:
   self-censor because it sounds hard.
 - Push her towards the commercial side, not only the product. Customers are
   small startups and owner-run businesses (1-20 people, no marketing
-  department). Prompt her to do market research the cheap way - talk to five
-  small-business owners about how they currently track competitors, read
-  r/smallbusiness, r/startups, Hacker News (Y Combinator) and Indie Hackers,
-  look at what Visualping/Distill/Kompyte charge and who they aim at - and to
-  write findings in the customers' own words, which then become site copy.
+  department). Keep the research desk-based at first - she does not speak
+  English and approaching strangers would be daunting: reading r/smallbusiness,
+  r/startups, Hacker News (Y Combinator) and Indie Hackers through browser
+  translation, and comparing what Visualping/Distill/Kompyte charge and who
+  they aim at. Offer to summarise any English page or thread for her. Talking
+  to real owners is a later, optional step, and can be in Ukrainian or Russian.
   Marketing likewise: be useful in those communities rather than advertising,
   one good Hacker News launch post, short Instagram/TikTok stories about the
-  pain, LinkedIn for B2B founders, and direct messages to ten owners. Invite
+  pain, LinkedIn for B2B founders, and direct messages to ten owners - draft
+  any English copy for her rather than expecting her to write it. Invite
   her to form a view on pricing (value not cost, three tiers, priced too low
   reads as unserious, prices are changeable) - it is her call, and Michael is
   a willing sounding board. `docs/START-HERE-uk.md` section 7 has the detail.
