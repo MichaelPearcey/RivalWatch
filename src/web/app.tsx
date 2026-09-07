@@ -42,7 +42,15 @@ export function createWebApp(app: App) {
       if (wantsHtml && err.status === 404) return c.html(<LoginPage t={T(c)} error="Not found." />, 404);
       return c.json({ error: err.message }, err.status as 400);
     }
-    if (err instanceof z.ZodError) return c.json({ error: "validation failed", issues: err.issues.map((i) => ({ path: i.path.join("."), message: i.message })) }, 400);
+    if (err instanceof z.ZodError) {
+      // Zod's diagnostics are English and developer-facing: browsers go back to the form with one translated sentence.
+      if (wantsHtml) {
+        const referer = c.req.header("referer");
+        const path = referer && referer.startsWith(cfg.publicUrl) ? referer : "/";
+        return c.redirect(`${path}${path.includes("?") ? "&" : "?"}flash=${encodeURIComponent(T(c)("err.validation"))}`);
+      }
+      return c.json({ error: "validation failed", issues: err.issues.map((i) => ({ path: i.path.join("."), message: i.message })) }, 400);
+    }
     log.error("unhandled request error", { path: c.req.path, ...errorFields(err) });
     return c.json({ error: "internal error" }, 500);
   });

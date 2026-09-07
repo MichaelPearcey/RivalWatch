@@ -96,6 +96,24 @@ describe("language in the app", () => {
     expect(t.app.repo.getUserByEmail("new-uk@a.co")!.locale).toBe("uk");
   });
 
+  it("shows browsers a translated sentence instead of raw validation diagnostics", async () => {
+    const s = await login(t.web, "val@a.co");
+    const res = await t.web.request(`${t.base}/b`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded", accept: "text/html", cookie: `${s.cookie}; rw_lang=uk`, referer: `${t.base}/` },
+      body: new URLSearchParams({ name: "   " }).toString(),
+    });
+    expect(res.status).toBe(302);
+    const flash = decodeURIComponent(new URL(res.headers.get("location")!, t.base).searchParams.get("flash") ?? "");
+    expect(flash).toContain("Перевірте, будь ласка, форму");
+
+    // API clients still get the useful detail.
+    const api = await t.web.request(`${t.base}/api/businesses`, { method: "POST", headers: { "content-type": "application/json", cookie: s.cookie }, body: JSON.stringify({ name: "   " }) });
+    expect(api.status).toBe(400);
+    expect(await api.text()).toContain("validation failed");
+  });
+
   it("legal pages stay English but carry a notice in other languages", async () => {
     const page = await (await t.web.request(`${t.base}/privacy`, { headers: { "accept-language": "es" } })).text();
     expect(page).toContain("Privacy Policy");
