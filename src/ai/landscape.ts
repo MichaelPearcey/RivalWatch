@@ -82,7 +82,8 @@ export function buildLandscapePrompt(business: { name: string; description: stri
  */
 export function heuristicLandscape(business: { name: string }, competitors: LandscapeInput[], t: Translate = translator("en")): LandscapeDoc {
   const moving = competitors.filter((c) => c.recent_changes.length + c.recent_news.length > 0);
-  const unpriced = competitors.filter((c) => !c.pricing || /^unknown$/i.test(c.pricing));
+  // A pricing summary with no figure in it (including the profile's "not published" fallback) tells the owner nothing, so it does not count as read.
+  const unpriced = competitors.filter((c) => !c.pricing || /^unknown$/i.test(c.pricing) || !/\d/.test(c.pricing));
   return {
     headline: competitors.length ? t("lsh.headline", { n: competitors.length, name: business.name, moving: moving.length }) : t("lsh.headline.none", { name: business.name }),
     summary: competitors.length

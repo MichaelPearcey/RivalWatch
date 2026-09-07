@@ -31,6 +31,8 @@ describe("translations", () => {
     expect(uk.plural("ov.competitors", 2)).toBe("конкуренти під наглядом");
     expect(uk.plural("ov.competitors", 5)).toBe("конкурентів під наглядом");
     expect(translator("ru").plural("pricing.every.days", 1)).toBe("Проверка каждый день");
+    expect(uk.plural("profile.sources", 1)).toBe("На основі 1 сторінки");
+    expect(uk.plural("profile.sources", 2)).toBe("На основі 2 сторінок");
     expect(translator("en").plural("pricing.pages", 1)).toBe("1 page per competitor");
     expect(translator("en").plural("pricing.pages", 3)).toBe("3 pages per competitor");
   });

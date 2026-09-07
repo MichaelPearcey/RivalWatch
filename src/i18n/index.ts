@@ -20,7 +20,7 @@ export const LANGUAGE_NAMES: Record<Locale, string> = { en: "English", uk: "Ukra
  * locale table (`.one`, `.few`, `.many`); Slavic locales need all three, the rest
  * repeat the plural form. Call them through `t.plural(key, n)`.
  */
-export const PLURAL_KEYS = ["ov.competitors", "ov.pages", "ov.insights", "ov.news", "pricing.competitors", "pricing.pages", "pricing.every.days", "pricing.every.hours"] as const;
+export const PLURAL_KEYS = ["ov.competitors", "ov.pages", "ov.insights", "ov.news", "pricing.competitors", "pricing.pages", "pricing.every.days", "pricing.every.hours", "profile.sources"] as const;
 export type PluralKey = (typeof PLURAL_KEYS)[number];
 type PluralForm = "one" | "few" | "many";
 

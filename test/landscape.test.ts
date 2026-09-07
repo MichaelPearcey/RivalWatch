@@ -55,6 +55,12 @@ describe("competitor landscape", () => {
     expect(doc.recommendations.join(" ")).toContain("Quiet Co");
   });
 
+  it("does not count a prose 'no prices found' summary as pricing we have read", () => {
+    const doc = heuristicLandscape({ name: "Bright Pixel" }, [input(), input({ name: "Quiet Co", pricing: "Not published on the pages we read." })]);
+    expect(doc.summary).toContain("pricing for 1 of 2");
+    expect(doc.opportunities.join(" ")).toContain("have not read prices for 1");
+  });
+
   it("the prompt carries our own pricing, tags each competitor and asks for the owner's language", () => {
     const prompt = buildLandscapePrompt({ name: "Bright Pixel", description: "Design studio", pricing: "Starter £25/month" }, [input({ name: 'A"B' })], "Ukrainian");
     expect(prompt).toContain("Our pricing: Starter £25/month");

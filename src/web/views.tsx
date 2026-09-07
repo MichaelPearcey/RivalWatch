@@ -1125,7 +1125,7 @@ const ProfileCard: FC<{ t: Translate; competitor: Competitor }> = ({ t, competit
             </div>
           ) : null}
           <div class="row tiny muted" style="margin-top:.6rem">
-            <span>{t("profile.sources", { n: profile.sources.length })}</span>
+            <span>{t.plural("profile.sources", profile.sources.length)}</span>
             {profile.provider === "heuristic" ? <span>· {t("profile.heuristic")}</span> : null}
             <form method="post" action={`/competitors/${competitor.id}/profile`} class="ml">
               <button class="tiny secondary" type="submit">
