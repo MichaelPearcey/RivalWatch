@@ -14,15 +14,16 @@ import { PLANS } from "../plans.js";
 import * as A from "./actions.js";
 import { adminOverview } from "./admin.js";
 import { createDemoSite } from "./demo-site.js";
-import { LANG_COOKIE, isLocale, resolveLocale, translator, type Translate } from "../i18n/index.js";
+import { LANG_COOKIE, isLocale, resolveLocale, translator, type Locale, type MessageKey, type Translate } from "../i18n/index.js";
+import { landscapeFilename, renderLandscapeDocument } from "./landscape-doc.js";
 import { crawlerPage, privacyPolicy, termsOfService } from "../legal.js";
 import { MEMORY_KINDS } from "../memory.js";
 import { streamSSE } from "hono/streaming";
 import { FounderPage } from "./founder-views.js";
 import { renderMarkdown } from "./md.js";
-import { AdminPage, BusinessPage, BusinessesPage, ConsentPage, InsightDetailPage, LandingPage, LegalPage, LoginPage, PageDetailPage, PricingPage, SettingsPage } from "./views.js";
+import { AdminPage, BUSINESS_TABS, BusinessPage, BusinessesPage, ConsentPage, InsightDetailPage, LandingPage, LegalPage, LoginPage, PageDetailPage, PricingPage, SettingsPage, type BusinessTab } from "./views.js";
 
-type Env = { Variables: { principal: Principal | undefined; t: Translate } };
+type Env = { Variables: { principal: Principal | undefined; t: Translate; locale: Locale } };
 type Ctx = Context<Env>;
 
 const idParam = z.coerce.number().int().positive();
@@ -41,7 +42,15 @@ export function createWebApp(app: App) {
       if (wantsHtml && err.status === 404) return c.html(<LoginPage t={T(c)} error="Not found." />, 404);
       return c.json({ error: err.message }, err.status as 400);
     }
-    if (err instanceof z.ZodError) return c.json({ error: "validation failed", issues: err.issues.map((i) => ({ path: i.path.join("."), message: i.message })) }, 400);
+    if (err instanceof z.ZodError) {
+      // Zod's diagnostics are English and developer-facing: browsers go back to the form with one translated sentence.
+      if (wantsHtml) {
+        const referer = c.req.header("referer");
+        const path = referer && referer.startsWith(cfg.publicUrl) ? referer : "/";
+        return c.redirect(`${path}${path.includes("?") ? "&" : "?"}flash=${encodeURIComponent(T(c)("err.validation"))}`);
+      }
+      return c.json({ error: "validation failed", issues: err.issues.map((i) => ({ path: i.path.join("."), message: i.message })) }, 400);
+    }
     log.error("unhandled request error", { path: c.req.path, ...errorFields(err) });
     return c.json({ error: "internal error" }, 500);
   });
@@ -53,9 +62,11 @@ export function createWebApp(app: App) {
     c.set("principal", principal);
     const locale = resolveLocale({ cookie: getCookie(c, LANG_COOKIE), user: principal?.user.locale, acceptLanguage: c.req.header("accept-language") });
     c.set("t", translator(locale));
+    c.set("locale", locale);
     await next();
   });
   const T = (c: Ctx): Translate => c.get("t");
+  const localeOf = (c: Ctx): Locale => c.get("locale");
 
   /** Language switcher: remembers the choice in a functional cookie and, when signed in, on the user. */
   web.get("/lang", (c) => {
@@ -176,7 +187,7 @@ export function createWebApp(app: App) {
     const body = await bodyOf(c);
     const { email, password } = z.object({ email: z.string().email().max(254), password: z.string().max(128) }).parse(body);
     try {
-      const { sessionToken } = await auth.signupWithPassword(email, password, ipOf(c));
+      const { sessionToken } = await auth.signupWithPassword(email, password, ipOf(c), localeOf(c));
       setSession(c, sessionToken);
       if (isJson(c)) return c.json({ ok: true }, 201);
       return c.redirect(safeNext(body.next));
@@ -200,7 +211,7 @@ export function createWebApp(app: App) {
   web.get("/auth/verify", (c) => {
     const token = c.req.query("token") ?? "";
     try {
-      const { sessionToken } = auth.verify(token);
+      const { sessionToken } = auth.verify(token, localeOf(c));
       setSession(c, sessionToken);
       return c.redirect("/");
     } catch (err) {
@@ -506,13 +517,13 @@ export function createWebApp(app: App) {
   // ---------------- HTML UI ----------------
   const ui = new Hono<Env>({ strict: false });
   ui.use("*", requireAuth);
-  const back = (c: Ctx, path: string, flash?: string) => c.redirect(flash ? `${path}?flash=${encodeURIComponent(flash)}` : path);
+  const back = (c: Ctx, path: string, flash?: string) => c.redirect(flash ? `${path}${path.includes("?") ? "&" : "?"}flash=${encodeURIComponent(flash)}` : path);
   const tryUi = async (c: Ctx, path: string, fn: () => Promise<string | void> | string | void) => {
     try {
       const msg = await fn();
       return back(c, path, msg ?? undefined);
     } catch (err) {
-      return back(c, path, messageOf(err));
+      return back(c, path, messageOf(err, T(c)));
     }
   };
 
@@ -529,21 +540,45 @@ export function createWebApp(app: App) {
     const feedback = repo.feedbackForInsights(p.accountId, insights.map((i) => i.id));
     const competitorNames = Object.fromEntries(competitors.map(({ competitor }) => [competitor.id, competitor.name]));
     const bigNews = repo.bigNews(p.accountId, business.id, { since: new Date(Date.now() - 30 * 86_400_000).toISOString() });
-    return c.html(<BusinessPage t={T(c)} principal={p} business={business} account={repo.getAccount(p.accountId)!} competitors={competitors} bigNews={bigNews} insights={insights} feedback={feedback} competitorNames={competitorNames} includeNoise={includeNoise} flash={c.req.query("flash")} />);
+    const requested = c.req.query("tab");
+    const tab = (BUSINESS_TABS as readonly string[]).includes(requested ?? "") ? (requested as BusinessTab) : "overview";
+    return c.html(<BusinessPage t={T(c)} principal={p} business={business} account={repo.getAccount(p.accountId)!} competitors={competitors} bigNews={bigNews} insights={insights} feedback={feedback} competitorNames={competitorNames} includeNoise={includeNoise} tab={tab} landscape={repo.getLandscape(p.accountId, business.id) ?? null} flash={c.req.query("flash")} />);
+  });
+  ui.post("/b/:id/landscape", async (c) => {
+    const bid = id(c);
+    const t = T(c);
+    return tryUi(c, `/b/${bid}?tab=landscape`, async () => {
+      await A.generateLandscapeDoc(app, P(c), bid);
+      return t("flash.landscape.done");
+    });
+  });
+  /** Word (.doc) download and a printable page the browser can save as PDF. */
+  ui.get("/b/:id/landscape.doc", (c) => {
+    const p = P(c);
+    const { business, landscape, doc } = A.landscapeForExport(app, p, id(c));
+    const html = renderLandscapeDocument({ t: T(c), business, landscape, doc, lang: localeOf(c) });
+    c.header("content-type", "application/msword; charset=utf-8");
+    c.header("content-disposition", contentDisposition(landscapeFilename(business.name, "doc")));
+    return c.body(html);
+  });
+  ui.get("/b/:id/landscape/print", (c) => {
+    const p = P(c);
+    const { business, landscape, doc } = A.landscapeForExport(app, p, id(c));
+    return c.html(renderLandscapeDocument({ t: T(c), business, landscape, doc, print: true, lang: localeOf(c) }));
   });
   ui.post("/b/:id/competitors", async (c) => {
     const bid = id(c);
     return tryUi(c, `/b/${bid}`, async () => {
       const form = await bodyOf(c);
       const r = await A.addCompetitor(app, P(c), bid, A.CompetitorInput.parse({ name: form.name, website: form.website }));
-      return r.suggestions.length ? `Added ${r.competitor.name}. We found ${r.suggestions.length} page(s) worth monitoring — confirm them below.` : `Added ${r.competitor.name}.`;
+      return r.suggestions.length ? T(c)("flash.comp.added.sugg", { name: r.competitor.name, n: r.suggestions.length }) : T(c)("flash.comp.added", { name: r.competitor.name });
     });
   });
   ui.post("/b/:id/scan", async (c) => {
     const bid = id(c);
     return tryUi(c, `/b/${bid}`, async () => {
       const results = await A.scanBusiness(app, P(c), bid);
-      return `Scanned ${results.length} page(s): ${summarise(results.map((r) => r.outcome.status))}`;
+      return T(c)("flash.scan.done", { n: results.length, summary: summarise(T(c), results.map((r) => r.outcome.status)) });
     });
   });
   ui.post("/b/:id/digest", async (c) => {
@@ -558,7 +593,7 @@ export function createWebApp(app: App) {
     return tryUi(c, `/b/${bid}`, async () => {
       const p = P(c);
       const r = await app.digests.sendFor(A.getBusiness(app, p, bid), p.actor, false, true);
-      return r.sent ? `Digest sent to ${r.recipients} recipient(s) via ${app.mailer.providerName} (${r.insightCount} insights).` : "Digest could not be sent; see admin → emails.";
+      return r.sent ? T(c)("flash.digest.sent", { n: r.recipients, insights: r.insightCount }) : T(c)("flash.digest.failed");
     });
   });
   ui.post("/competitors/:id/pages", async (c) => {
@@ -571,14 +606,14 @@ export function createWebApp(app: App) {
     const competitor = A.getCompetitor(app, P(c), id(c));
     return tryUi(c, `/b/${competitor.business_id}`, async () => {
       const s = await A.discoverForCompetitor(app, P(c), competitor.id);
-      return s.length ? `${s.length} suggestion(s) waiting for your confirmation.` : "No additional pages found on their home page.";
+      return s.length ? T(c)("flash.discover.found", { n: s.length }) : T(c)("flash.discover.none");
     });
   });
   ui.post("/competitors/:id/news", async (c) => {
     const competitor = A.getCompetitor(app, P(c), id(c));
     return tryUi(c, `/b/${competitor.business_id}`, async () => {
       const r = await A.refreshNews(app, P(c), competitor.id);
-      return r.error ? `News check failed: ${r.error}` : `${r.fetched} headlines checked, ${r.added} new, ${r.big.length} big.`;
+      return r.error ? T(c)("flash.news.failed", { error: r.error }) : T(c)("flash.news.done", { fetched: r.fetched, added: r.added, big: r.big.length });
     });
   });
   ui.post("/competitors/:id/profile", async (c) => {
@@ -609,7 +644,7 @@ export function createWebApp(app: App) {
     return tryUi(c, `/b/${competitor.business_id}`, async () => {
       if (verb === "scan") {
         const o = await A.scanPage(app, p, page.id);
-        return `Scan result: ${o.status}${"message" in o ? ` (${o.message})` : ""}${"confirmAfter" in o ? ` — will confirm after ${o.confirmAfter.slice(0, 16)} UTC` : ""}`;
+        return T(c)("flash.scan.page", { status: `${T(c)(`out.${o.status}` as MessageKey)}${"message" in o ? ` (${o.message})` : ""}${"confirmAfter" in o ? ` — ${o.confirmAfter.slice(0, 16)} UTC` : ""}` });
       }
       if (verb === "pause") A.setPagePaused(app, p, page.id, true);
       else if (verb === "resume") A.setPagePaused(app, p, page.id, false);
@@ -813,13 +848,21 @@ function isJson(c: Ctx): boolean {
   return (c.req.header("content-type") ?? "").includes("application/json");
 }
 
-function messageOf(err: unknown): string {
-  if (err instanceof z.ZodError) return err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+/** Zod diagnostics are English and developer-facing; browsers get one translated sentence instead. */
+function messageOf(err: unknown, t: Translate): string {
+  if (err instanceof z.ZodError) return t("err.validation");
   return err instanceof Error ? err.message : String(err);
 }
 
-function summarise(statuses: string[]): string {
+/** RFC 5987: business names carry non-ASCII, so send an ASCII fallback plus the real name. */
+function contentDisposition(filename: string): string {
+  const ascii = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "");
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
+/** "2 no change, 1 could not be fetched" - never the raw pipeline enum. */
+function summarise(t: Translate, statuses: string[]): string {
   const counts = new Map<string, number>();
   for (const s of statuses) counts.set(s, (counts.get(s) ?? 0) + 1);
-  return [...counts].map(([k, v]) => `${v} ${k}`).join(", ") || "nothing to scan";
+  return [...counts].map(([k, v]) => `${v} ${t(`out.${k}` as MessageKey)}`).join(", ") || t("out.nothing");
 }

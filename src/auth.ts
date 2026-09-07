@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Config } from "./config.js";
 import type { Repo, User } from "./db/repo.js";
 import type { Events } from "./events.js";
+import type { Locale } from "./i18n/index.js";
 import { LEGAL_VERSION } from "./legal.js";
 import { log } from "./logger.js";
 import type { Mailer } from "./mail/index.js";
@@ -96,14 +97,14 @@ export class Auth {
   }
 
   /** Step 2: verify the token, create user/account if needed, return a session token to set as a cookie. */
-  verify(token: string): { user: User; sessionToken: string; created: boolean } {
+  verify(token: string, locale?: Locale): { user: User; sessionToken: string; created: boolean } {
     const now = new Date().toISOString();
     const consumed = this.repo.consumeLoginToken(hashToken(token), now);
     if (!consumed) {
       this.events.record({ type: "user.login_failed", result: "denied", payload: { reason: "invalid_or_expired" } });
       throw new AuthError(401, "This sign-in link is invalid or has expired.");
     }
-    return this.establishSession(consumed.email, "magic_link");
+    return this.establishSession(consumed.email, "magic_link", locale);
   }
 
   /**
@@ -171,13 +172,13 @@ export class Auth {
    * the address is unverified until the emailed link is clicked (digests are held
    * back until then, so a typo never sends someone else's data anywhere).
    */
-  async signupWithPassword(emailRaw: string, password: string, ip: string | null): Promise<{ user: User; sessionToken: string }> {
+  async signupWithPassword(emailRaw: string, password: string, ip: string | null, locale?: Locale): Promise<{ user: User; sessionToken: string }> {
     const email = emailRaw.trim().toLowerCase();
     if (this.repo.getUserByEmail(email)) throw new AuthError(409, "An account with this email already exists. Sign in instead, or use an email link if you've forgotten your password.");
     const check = checkPasswordPolicy(password, email);
     if (!check.ok) throw new AuthError(400, check.reason!);
     const hash = await hashPassword(password);
-    const s = this.establishSession(email, "password_signup");
+    const s = this.establishSession(email, "password_signup", locale);
     this.repo.setUserPassword(s.user.id, hash);
     this.events.record({ type: "user.password_set", actor: `user:${s.user.id}`, accountId: s.user.account_id, entity: { type: "user", id: s.user.id }, payload: { at_signup: true } });
     await this.sendVerification(s.user, ip);
@@ -230,12 +231,13 @@ export class Auth {
     return this.repo.hasConsent(user.id, "terms", LEGAL_VERSION) && this.repo.hasConsent(user.id, "privacy", LEGAL_VERSION);
   }
 
-  private establishSession(email: string, method: "magic_link" | "bootstrap" | "password" | "password_signup"): { user: User; sessionToken: string; created: boolean } {
+  /** `locale` is the language the visitor was reading in; it becomes the new account's language so their first AI output is in it. */
+  private establishSession(email: string, method: "magic_link" | "bootstrap" | "password" | "password_signup", locale?: Locale): { user: User; sessionToken: string; created: boolean } {
     let user = this.repo.getUserByEmail(email);
     let created = false;
     if (!user) {
       const account = this.repo.createAccount({ name: email.split("@")[0] ?? "My account" });
-      user = this.repo.createUser({ account_id: account.id, email, role: "owner", is_admin: this.isAdminEmail(email) });
+      user = this.repo.createUser({ account_id: account.id, email, role: "owner", is_admin: this.isAdminEmail(email), ...(locale ? { locale } : {}) });
       created = true;
       this.events.record({ type: "account.created", actor: `user:${user.id}`, accountId: account.id, entity: { type: "account", id: account.id }, payload: { plan: account.plan } });
       this.events.record({ type: "user.signup", actor: `user:${user.id}`, accountId: account.id, entity: { type: "user", id: user.id }, payload: { email: maskEmail(user.email), method } });

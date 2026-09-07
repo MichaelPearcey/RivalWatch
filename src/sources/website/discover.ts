@@ -5,6 +5,7 @@ import type { PoliteFetcher } from "./fetcher.js";
 export interface DiscoveredPage {
   url: string;
   kind: PageKind;
+  /** Machine-readable so the UI can show it in the reader's language: `both|path|text` + ":" + the matched text. */
   reason: string;
   score: number;
 }
@@ -57,7 +58,7 @@ export function rankLinks(html: string, baseUrl: string, maxResults = 6): Discov
       const score = rule.score * (pathHit && textHit ? 1 : pathHit ? 0.85 : 0.7);
       const existing = found.get(normalised);
       if (!existing || existing.score < score) {
-        found.set(normalised, { url: url.href, kind: rule.kind, score, reason: pathHit && textHit ? `path and link text "${text}"` : pathHit ? `URL path ${url.pathname}` : `link text "${text}"` });
+        found.set(normalised, { url: url.href, kind: rule.kind, score, reason: pathHit && textHit ? `both:${text}` : pathHit ? `path:${url.pathname}` : `text:${text}` });
       }
       break;
     }

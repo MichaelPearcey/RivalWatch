@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { MessagesClient } from "../src/agents/runner.js";
 import { buildProfilePrompt, heuristicProfile } from "../src/ai/profile.js";
+import { translator } from "../src/i18n/index.js";
 import { json, login, testApp } from "./helpers.js";
 
 const fakeLlm = (text: string): MessagesClient & { calls: number } => {
@@ -28,6 +29,13 @@ describe("competitor profiles", () => {
     expect(p.pricing_summary).toContain("£19/month");
     expect(p.usps).toContain("Design tools for independent professionals");
     expect(p.sources).toHaveLength(2);
+  });
+
+  it("writes its own fallback wording in the owner's language", () => {
+    const p = heuristicProfile("Acme", [{ url: "https://acme/", kind: "home", title: "Acme", text: "Acme\n£19/month" }], translator("uk"));
+    expect(p.target_customers).toBe("Не вдалося визначити автоматично.");
+    expect(p.pricing_summary).toContain("Знайдені ціни:");
+    expect(heuristicProfile("Acme", [{ url: "https://acme/", kind: "home", title: "Acme", text: "Acme" }], translator("uk")).pricing_summary).toBe("Не вказані на сторінках, які ми прочитали.");
   });
 
   it("the prompt bounds page text, tags sources, and asks for the owner's language", () => {
