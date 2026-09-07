@@ -3,9 +3,26 @@ import { raw } from "hono/html";
 import type { AgentNote, AgentRunRow, AgentStateRow } from "../agents/types.js";
 import type { Approval } from "../approvals.js";
 import type { Principal } from "../auth.js";
-import type { Account, ApiKey, Business, Change, Competitor, CompetitorProfile, EmailRow, Insight, InsightFeedback, MonitoredPage, NewsItem, PageSuggestion, Snapshot, User } from "../db/repo.js";
+import type {
+  Account,
+  ApiKey,
+  Business,
+  Change,
+  Competitor,
+  CompetitorProfile,
+  EmailRow,
+  Insight,
+  InsightFeedback,
+  Landscape,
+  LandscapeDoc,
+  MonitoredPage,
+  NewsItem,
+  PageSuggestion,
+  Snapshot,
+  User,
+} from "../db/repo.js";
 import type { EventRow } from "../events.js";
-import { LOCALES, translator, type Locale, type Translate } from "../i18n/index.js";
+import { LOCALES, translator, type Locale, type MessageKey, type Translate } from "../i18n/index.js";
 import { COMPANY, LEGAL_VERSION } from "../legal.js";
 import { PLANS, getPlan } from "../plans.js";
 import { renderMarkdown } from "./md.js";
@@ -520,11 +537,243 @@ export const BusinessesPage: FC<{ principal: Principal; t: Translate; businesses
   </Layout>
 );
 
-export const StatusBadge: FC<{ page: MonitoredPage }> = ({ page }) => (
+export const StatusBadge: FC<{ page: MonitoredPage; t?: Translate }> = ({ page, t = EN }) => (
   <span class={`badge st-${page.status}`} title={page.status_message ?? ""}>
-    {page.status.replace(/_/g, " ")}
+    {t(`status.${page.status}`)}
   </span>
 );
+
+/** Insight and news categories are stored as English enum values; show them in the reader's language. */
+const CategoryBadge: FC<{ t: Translate; category: string; className?: string }> = ({ t, category, className = "badge cat" }) => {
+  const key = `cat.${category}` as const;
+  const label = t(key as never);
+  return <span class={className}>{label === key ? category.replace(/_/g, " ") : label}</span>;
+};
+
+export const BUSINESS_TABS = ["overview", "news", "competitors", "landscape"] as const;
+export type BusinessTab = (typeof BUSINESS_TABS)[number];
+
+/** One row of the unified feed: a confirmed website change, or a news headline. */
+type FeedItem = { at: string; competitorId: number; kind: "change" | "news" } & ({ kind: "change"; insight: Insight } | { kind: "news"; news: NewsItem });
+
+function buildFeed(insights: Insight[], news: NewsItem[]): FeedItem[] {
+  const items: FeedItem[] = [
+    ...insights.map((i) => ({ at: i.created_at, competitorId: i.competitor_id, kind: "change" as const, insight: i })),
+    ...news.filter((n) => n.about_competitor !== 0).map((n) => ({ at: n.published_at ?? n.fetched_at, competitorId: n.competitor_id, kind: "news" as const, news: n })),
+  ];
+  return items.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+}
+
+const importanceOf = (item: FeedItem) => (item.kind === "change" ? item.insight.importance : (item.news.magnitude ?? 0));
+
+const Tabs: FC<{ t: Translate; businessId: number; tab: BusinessTab }> = ({ t, businessId, tab }) => (
+  <div class="row" style="gap:.4rem;margin:1rem 0 .5rem;flex-wrap:wrap">
+    {BUSINESS_TABS.map((name) => (
+      <a class={`btn tiny${name === tab ? "" : " secondary"}`} href={`/b/${businessId}?tab=${name}`} aria-current={name === tab ? "page" : undefined}>
+        {t(`tab.${name}`)}
+      </a>
+    ))}
+  </div>
+);
+
+const Stat: FC<{ n: number | string; label: string }> = ({ n, label }) => (
+  <div class="card flat" style="text-align:center;margin:0">
+    <div style="font-size:1.7rem;font-weight:700;line-height:1.1">{n}</div>
+    <div class="muted tiny">{label}</div>
+  </div>
+);
+
+const FeedTable: FC<{ t: Translate; items: FeedItem[]; competitorNames: Record<number, string> }> = ({ t, items, competitorNames }) => (
+  <div class="card flat scrollx">
+    <table>
+      <thead>
+        <tr>
+          <th>{t("feed.col.when")}</th>
+          <th>{t("feed.col.competitor")}</th>
+          <th class="w-main">{t("feed.col.what")}</th>
+          <th>{t("feed.col.type")}</th>
+          <th>{t("feed.col.impact")}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((item) => (
+          <tr>
+            <td class="muted small" style="white-space:nowrap">{item.at.slice(0, 10)}</td>
+            <td class="small">{competitorNames[item.competitorId] ?? ""}</td>
+            <td class="w-main">
+              {item.kind === "change" ? (
+                <>
+                  <a href={`/insights/${item.insight.id}`} style="font-weight:600;color:inherit">
+                    {item.insight.headline}
+                  </a>
+                  <div class="muted tiny">{item.insight.why_it_matters}</div>
+                </>
+              ) : (
+                <>
+                  <a href={item.news.url} target="_blank" rel="noopener noreferrer" style="font-weight:600;color:inherit">
+                    {item.news.title}
+                  </a>
+                  <div class="muted tiny">
+                    {item.news.source ?? ""}
+                    {item.news.summary && item.news.summary !== item.news.title ? ` · ${item.news.summary}` : ""}
+                  </div>
+                </>
+              )}
+            </td>
+            <td class="small" style="white-space:nowrap">
+              <span class="badge">{t(`feed.kind.${item.kind}`)}</span>{" "}
+              <CategoryBadge t={t} category={item.kind === "change" ? item.insight.category : (item.news.category ?? "other")} />
+            </td>
+            <td style="white-space:nowrap">
+              <span class={`badge${importanceOf(item) >= 4 ? " imp-5" : ""}`}>{importanceOf(item)}/5</span>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+    {items.length === 0 ? <p class="muted small" style="margin:.5rem">{t("feed.empty")}</p> : null}
+  </div>
+);
+
+const CompetitorTable: FC<{
+  t: Translate;
+  rows: { competitor: Competitor; pages: MonitoredPage[]; news: NewsItem[] }[];
+  changeCounts: Record<number, number>;
+}> = ({ t, rows, changeCounts }) => (
+  <div class="card flat scrollx">
+    <table>
+      <thead>
+        <tr>
+          <th>{t("comp.col.name")}</th>
+          <th>{t("comp.col.pages")}</th>
+          <th>{t("comp.col.health")}</th>
+          <th>{t("comp.col.checked")}</th>
+          <th>{t("comp.col.changes")}</th>
+          <th>{t("comp.col.news")}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(({ competitor, pages, news }) => {
+          const bad = pages.filter((p) => p.status !== "ACTIVE" && p.status !== "PAUSED").length;
+          const checked = pages.map((p) => p.last_checked_at).filter(Boolean).sort().at(-1) ?? null;
+          return (
+            <tr>
+              <td>
+                <a href={`#competitor-${competitor.id}`} style="font-weight:600;color:inherit">
+                  {competitor.name}
+                </a>
+                <div class="muted tiny">{competitor.website.replace(/^https?:\/\//, "")}</div>
+              </td>
+              <td>{pages.length}</td>
+              <td>{bad ? <span class="badge st-FETCH_ERROR">{t("comp.unhealthy", { n: bad })}</span> : <span class="badge ok">{t("comp.healthy")}</span>}</td>
+              <td class="muted small" style="white-space:nowrap">{fmtDate(checked)}</td>
+              <td>{changeCounts[competitor.id] ?? 0}</td>
+              <td>{news.filter((n) => n.about_competitor !== 0).length}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+);
+
+function parseDoc(json: string | null): LandscapeDoc | null {
+  if (!json) return null;
+  try {
+    return JSON.parse(json) as LandscapeDoc;
+  } catch {
+    return null;
+  }
+}
+
+const LandscapeCard: FC<{ t: Translate; businessId: number; landscape: Landscape | null; hasCompetitors: boolean }> = ({ t, businessId, landscape, hasCompetitors }) => {
+  const doc = parseDoc(landscape?.doc_json ?? null);
+  return (
+    <div class="card">
+      <div class="row">
+        <div class="grow">
+          <h2 style="margin:0">{t("ls.h")}</h2>
+          <p class="muted small" style="margin:.2rem 0 0">{t("ls.p")}</p>
+        </div>
+        {doc ? (
+          <div class="row" style="gap:.5rem">
+            <a class="btn secondary" href={`/b/${businessId}/landscape.doc`}>
+              {t("ls.dl.word")}
+            </a>
+            <a class="btn secondary" href={`/b/${businessId}/landscape/print`} target="_blank" rel="noopener">
+              {t("ls.dl.pdf")}
+            </a>
+          </div>
+        ) : null}
+        {hasCompetitors ? (
+          <form method="post" action={`/b/${businessId}/landscape`}>
+            <button type="submit" class={doc ? "secondary" : ""}>
+              {doc ? t("ls.regenerate") : t("ls.generate")}
+            </button>
+          </form>
+        ) : null}
+      </div>
+      {!hasCompetitors ? <p class="muted small">{t("ls.nocomp")}</p> : null}
+      {landscape?.status === "pending" ? <p class="muted small">{t("ls.pending")}</p> : null}
+      {landscape?.status === "failed" ? <div class="card alert small">{t("ls.failed")}</div> : null}
+      {!doc && hasCompetitors && landscape?.status !== "pending" ? <p class="muted small">{t("ls.none")}</p> : null}
+      {doc ? (
+        <>
+          <p class="muted tiny" style="margin:.6rem 0 0">
+            {t("ls.generated", { date: fmtDate(landscape?.generated_at), n: landscape?.competitor_count ?? doc.competitors.length })}
+            {doc.provider === "heuristic" ? ` · ${t("ls.heuristic")}` : ""}
+          </p>
+          <h3 style="margin:.6rem 0 .2rem">{doc.headline}</h3>
+          <p style="margin:0 0 .8rem">{doc.summary}</p>
+          <div class="scrollx">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t("ls.col.competitor")}</th>
+                  <th>{t("ls.col.positioning")}</th>
+                  <th>{t("ls.col.pricing")}</th>
+                  <th>{t("ls.col.strengths")}</th>
+                  <th>{t("ls.col.watch")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {doc.competitors.map((c) => (
+                  <tr>
+                    <td style="font-weight:600">{c.name}</td>
+                    <td class="small">{c.positioning}</td>
+                    <td class="small">{c.pricing}</td>
+                    <td class="small">{c.strengths}</td>
+                    <td class="small">{c.watch_out}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div class="grid g3" style="margin-top:1rem">
+            {(
+              [
+                ["ls.opportunities", doc.opportunities],
+                ["ls.threats", doc.threats],
+                ["ls.actions", doc.recommendations],
+              ] as const
+            ).map(([key, items]) =>
+              items.length ? (
+                <div class="card flat" style="margin:0">
+                  <strong class="small">{t(key)}</strong>
+                  <ul class="small" style="margin:.4rem 0 0;padding-left:1.1rem">
+                    {items.map((i) => (
+                      <li>{i}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null,
+            )}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+};
 
 export const BusinessPage: FC<{
   principal: Principal;
@@ -537,10 +786,21 @@ export const BusinessPage: FC<{
   feedback: Record<number, InsightFeedback[]>;
   competitorNames: Record<number, string>;
   includeNoise: boolean;
+  tab?: BusinessTab;
+  landscape?: Landscape | null;
   flash?: string | undefined;
-}> = ({ principal, t, business, account, competitors, bigNews, insights, feedback, competitorNames, includeNoise, flash }) => {
+}> = ({ principal, t, business, account, competitors, bigNews, insights, feedback, competitorNames, includeNoise, tab = "overview", landscape = null, flash }) => {
   const plan = getPlan(account.plan);
-  const unhealthy = competitors.flatMap((c) => c.pages).filter((p) => p.status !== "ACTIVE" && p.status !== "PAUSED");
+  const pages = competitors.flatMap((c) => c.pages);
+  const unhealthy = pages.filter((p) => p.status !== "ACTIVE" && p.status !== "PAUSED");
+  const allNews = competitors.flatMap((c) => c.news);
+  const feed = buildFeed(insights, allNews);
+  const since30 = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const recent = feed.filter((f) => f.at >= since30);
+  const changeCounts: Record<number, number> = {};
+  for (const f of recent) if (f.kind === "change") changeCounts[f.competitorId] = (changeCounts[f.competitorId] ?? 0) + 1;
+  const noProfile = competitors.filter(({ competitor }) => competitor.profile_status !== "ready").length;
+  const tabHref = (name: BusinessTab) => `/b/${business.id}?tab=${name}`;
   return (
     <Layout title={business.name} principal={principal} flash={flash} t={t}>
       <div class="row">
@@ -559,41 +819,94 @@ export const BusinessPage: FC<{
           </button>
         </form>
       </div>
-      {unhealthy.length ? <div class="card alert">{t("biz.problem", { n: unhealthy.length })}</div> : null}
-      {bigNews.length ? (
-        <div class="card glow" style="border-color:var(--warn)">
-          <h2 style="margin:0 0 .25rem">{t("news.big.h")}</h2>
-          <p class="muted small" style="margin:0 0 .5rem">{t("news.big.p")}</p>
-          {bigNews.map((n) => (
-            <NewsRow t={t} item={n} competitorName={competitorNames[n.competitor_id] ?? ""} big />
-          ))}
-        </div>
+
+      <Tabs t={t} businessId={business.id} tab={tab} />
+
+      {tab === "overview" ? (
+        <>
+          <h2 style="margin:1.25rem 0 .5rem">{t("ov.h")}</h2>
+          <div class="grid g4" style="gap:.6rem">
+            <Stat n={competitors.length} label={t("ov.competitors")} />
+            <Stat n={pages.length} label={t("ov.pages")} />
+            <Stat n={recent.filter((f) => f.kind === "change").length} label={t("ov.insights")} />
+            <Stat n={recent.filter((f) => f.kind === "news").length} label={t("ov.news")} />
+          </div>
+          <div class="card">
+            <h2 style="margin:0 0 .4rem">{t("ov.attention.h")}</h2>
+            <ul class="small" style="margin:0;padding-left:1.1rem">
+              {unhealthy.length ? <li>{t("ov.attention.pages", { n: unhealthy.length })}</li> : null}
+              {noProfile ? <li>{t("ov.attention.profile", { n: noProfile })}</li> : null}
+              {competitors.length && !landscape?.doc_json ? (
+                <li>
+                  {t("ov.attention.landscape")} <a href={tabHref("landscape")}>{t("ls.generate")}</a>
+                </li>
+              ) : null}
+              {!unhealthy.length && !noProfile && (landscape?.doc_json || !competitors.length) ? <li class="muted">{t("ov.attention.none")}</li> : null}
+            </ul>
+          </div>
+          {bigNews.length ? (
+            <div class="card glow" style="border-color:var(--warn)">
+              <h2 style="margin:0 0 .25rem">{t("news.big.h")}</h2>
+              <p class="muted small" style="margin:0 0 .5rem">{t("news.big.p")}</p>
+              {bigNews.slice(0, 5).map((n) => (
+                <NewsRow t={t} item={n} competitorName={competitorNames[n.competitor_id] ?? ""} big />
+              ))}
+            </div>
+          ) : null}
+          <div class="row" style="margin-top:1.5rem">
+            <h2 style="margin:0">{t("ov.latest.h")}</h2>
+            <a class="ml small" href={tabHref("news")}>
+              {t("ov.seeall")}
+            </a>
+          </div>
+          {feed.length === 0 ? <div class="card empty">{competitors.length === 0 ? t("biz.empty.nocomp") : t("ov.quiet")}</div> : <FeedTable t={t} items={feed.slice(0, 8)} competitorNames={competitorNames} />}
+        </>
       ) : null}
 
-      <div class="row" style="margin-top:1.5rem">
-        <h2 style="margin:0">{t("biz.insights")}</h2>
-        <span class="ml small">
-          {includeNoise ? <a href={`/b/${business.id}`}>{t("biz.hidenoise")}</a> : <a href={`/b/${business.id}?noise=1`}>{t("biz.shownoise")}</a>}
-          {" · "}
-          <form method="post" action={`/b/${business.id}/digest`} style="display:inline">
-            <input type="hidden" name="enabled" value={business.digest_enabled ? "0" : "1"} />
-            <button class="tiny secondary" type="submit">
-              {business.digest_enabled ? t("biz.digest.toggle.off") : t("biz.digest.toggle.on")}
-            </button>
-          </form>{" "}
-          <form method="post" action={`/b/${business.id}/digest/send`} style="display:inline">
-            <button class="tiny secondary" type="submit">
-              {t("biz.digest.now")}
-            </button>
-          </form>
-        </span>
-      </div>
-      {insights.length === 0 ? <div class="card empty">{competitors.length === 0 ? t("biz.empty.nocomp") : t("biz.empty")}</div> : null}
-      {insights.map((i) => <InsightCard t={t} insight={i} competitorName={competitorNames[i.competitor_id] ?? "Competitor"} feedback={feedback[i.id] ?? []} />)}
+      {tab === "news" ? (
+        <>
+          <div class="row">
+            <div class="grow">
+              <h2 style="margin:0">{t("feed.h")}</h2>
+              <p class="muted small" style="margin:.2rem 0 0">{t("feed.p")}</p>
+            </div>
+            <span class="small">
+              {includeNoise ? <a href={tabHref("news")}>{t("biz.hidenoise")}</a> : <a href={`${tabHref("news")}&noise=1`}>{t("biz.shownoise")}</a>}
+            </span>
+          </div>
+          <FeedTable t={t} items={feed} competitorNames={competitorNames} />
+          <div class="row" style="margin-top:1rem">
+            <h2 style="margin:0">{t("biz.insights")}</h2>
+            <span class="ml small">
+              <form method="post" action={`/b/${business.id}/digest`} style="display:inline">
+                <input type="hidden" name="enabled" value={business.digest_enabled ? "0" : "1"} />
+                <button class="tiny secondary" type="submit">
+                  {business.digest_enabled ? t("biz.digest.toggle.off") : t("biz.digest.toggle.on")}
+                </button>
+              </form>{" "}
+              <form method="post" action={`/b/${business.id}/digest/send`} style="display:inline">
+                <button class="tiny secondary" type="submit">
+                  {t("biz.digest.now")}
+                </button>
+              </form>
+            </span>
+          </div>
+          {insights.length === 0 ? <div class="card empty">{competitors.length === 0 ? t("biz.empty.nocomp") : t("biz.empty")}</div> : null}
+          {insights.slice(0, 20).map((i) => (
+            <InsightCard t={t} insight={i} competitorName={competitorNames[i.competitor_id] ?? ""} feedback={feedback[i.id] ?? []} />
+          ))}
+        </>
+      ) : null}
 
-      <h2>{t("biz.competitors")}</h2>
-      {competitors.map(({ competitor, pages, suggestions, news }) => (
-        <div class="card">
+      {tab === "landscape" ? <LandscapeCard t={t} businessId={business.id} landscape={landscape} hasCompetitors={competitors.length > 0} /> : null}
+
+      {tab !== "competitors" ? null : (
+        <>
+          {unhealthy.length ? <div class="card alert">{t("biz.problem", { n: unhealthy.length })}</div> : null}
+          {competitors.length ? <CompetitorTable t={t} rows={competitors} changeCounts={changeCounts} /> : null}
+          <h2>{t("biz.competitors")}</h2>
+          {competitors.map(({ competitor, pages: cPages, suggestions, news }) => (
+        <div class="card" id={`competitor-${competitor.id}`}>
           <div class="row">
             <strong style="font-size:1.05rem">{competitor.name}</strong>
             <a class="muted small" href={competitor.website} target="_blank" rel="noopener">
@@ -626,7 +939,8 @@ export const BusinessPage: FC<{
               </button>
             </form>
           </details>
-          <table style="margin-top:.75rem">
+          <div class="scrollx" style="margin-top:.75rem">
+          <table>
             <thead>
               <tr>
                 <th>{t("page.col.page")}</th>
@@ -637,7 +951,7 @@ export const BusinessPage: FC<{
               </tr>
             </thead>
             <tbody>
-              {pages.map((p) => (
+              {cPages.map((p) => (
                 <tr>
                   <td>
                     <a href={`/pages/${p.id}`}>{p.url.replace(/^https?:\/\//, "")}</a>
@@ -645,12 +959,12 @@ export const BusinessPage: FC<{
                   </td>
                   <td>{t(`kind.${p.kind}`)}</td>
                   <td class="muted small">
-                    {t("page.every", { interval: humanMinutes(p.check_interval_minutes) })}
+                    {t("page.every", { interval: humanMinutes(t, p.check_interval_minutes) })}
                     <br />
                     {t("page.last", { date: fmtDate(p.last_checked_at) })}
                   </td>
                   <td>
-                    <StatusBadge page={p} />
+                    <StatusBadge page={p} t={t} />
                   </td>
                   <td style="white-space:nowrap;text-align:right">
                     <form method="post" action={`/pages/${p.id}/scan`} style="display:inline">
@@ -673,9 +987,11 @@ export const BusinessPage: FC<{
               ))}
             </tbody>
           </table>
+          </div>
           {suggestions.length ? (
             <div class="card info flat" style="margin:.75rem 0 0">
               <strong class="small">{t("sugg.h")}</strong>
+              <div class="scrollx">
               <table>
                 <tbody>
                   {suggestions.map((s) => (
@@ -701,6 +1017,7 @@ export const BusinessPage: FC<{
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           ) : null}
           <form method="post" action={`/competitors/${competitor.id}/pages`} class="inline" style="margin-top:.75rem">
@@ -720,19 +1037,21 @@ export const BusinessPage: FC<{
             </button>
           </form>
         </div>
-      ))}
+          ))}
 
-      <h2>{t("comp.add.h")}</h2>
-      <form method="post" action={`/b/${business.id}/competitors`} class="card inline">
-        <label>
-          {t("comp.add.name")} <input name="name" required placeholder="Acme Studio" />
-        </label>
-        <label class="grow">
-          {t("comp.add.website")} <input name="website" type="url" required placeholder="https://acme.example" />
-        </label>
-        <button type="submit">{t("comp.add.btn")}</button>
-        <p class="muted tiny" style="width:100%;margin:0">{t("comp.add.note")}</p>
-      </form>
+          <h2>{t("comp.add.h")}</h2>
+          <form method="post" action={`/b/${business.id}/competitors`} class="card inline">
+            <label>
+              {t("comp.add.name")} <input name="name" required placeholder="Acme Studio" />
+            </label>
+            <label class="grow">
+              {t("comp.add.website")} <input name="website" type="url" required placeholder="https://acme.example" />
+            </label>
+            <button type="submit">{t("comp.add.btn")}</button>
+            <p class="muted tiny" style="width:100%;margin:0">{t("comp.add.note")}</p>
+          </form>
+        </>
+      )}
     </Layout>
   );
 };
@@ -740,7 +1059,7 @@ export const BusinessPage: FC<{
 const NewsRow: FC<{ t: Translate; item: NewsItem; competitorName: string; big?: boolean }> = ({ t, item, competitorName, big }) => (
   <div class="small" style={`padding:.55rem 0;border-top:1px solid var(--line)${big ? "" : ""}`}>
     <div class="row" style="gap:.4rem">
-      {item.category ? <span class={`badge cat${(item.magnitude ?? 0) >= 4 ? " imp-5" : ""}`}>{item.category}</span> : null}
+      {item.category ? <CategoryBadge t={t} category={item.category} className={`badge cat${(item.magnitude ?? 0) >= 4 ? " imp-5" : ""}`} /> : null}
       {item.magnitude ? <span class={`badge${(item.magnitude ?? 0) >= 4 ? " imp-5" : ""}`}>{t("news.magnitude", { n: item.magnitude })}</span> : null}
       {item.about_competitor === 0 ? <span class="badge">{t("news.notabout")}</span> : null}
       <span class="muted tiny">
@@ -825,7 +1144,7 @@ export const InsightCard: FC<{ t: Translate; insight: Insight; competitorName: s
   return (
     <div class={`card insight${insight.matters ? "" : " filtered"}`}>
       <div class="row small">
-        <span class={`badge cat imp-${insight.importance}`}>{insight.category}</span>
+        <CategoryBadge t={t} category={insight.category} className={`badge cat imp-${insight.importance}`} />
         <span class="badge">{t("ins.importance", { n: insight.importance })}</span>
         {insight.matters ? null : <span class="badge">{t("ins.filtered")}</span>}
         <span class="muted">
@@ -914,21 +1233,22 @@ export const PageDetailPage: FC<{ principal: Principal; t: Translate; page: Moni
     </p>
     <h1 style="font-size:1.3rem;word-break:break-all">{page.url}</h1>
     <p class="row small">
-      <StatusBadge page={page} />
+      <StatusBadge page={page} t={t} />
       <span class="muted">
-        {competitor.name} · {t(`kind.${page.kind}`)} · {t("page.every", { interval: humanMinutes(page.check_interval_minutes) })} · next {fmtDate(page.next_check_at)} · failures {page.consecutive_failures} · since {fmtDate(page.status_since)}
+        {competitor.name} · {t(`kind.${page.kind}`)} · {t("page.every", { interval: humanMinutes(t, page.check_interval_minutes) })} · {t("pd.next", { date: fmtDate(page.next_check_at) })} · {t("pd.failures", { n: page.consecutive_failures })} ·{" "}
+        {t("pd.since", { date: fmtDate(page.status_since) })}
       </span>
     </p>
     {page.status_message ? <div class="card alert small">{page.status_message}</div> : null}
-    <h2>Snapshots ({snapshots.length})</h2>
-    <div class="card flat">
+    <h2>{t("pd.snapshots", { n: snapshots.length })}</h2>
+    <div class="card flat scrollx">
       <table>
         <thead>
           <tr>
-            <th>Fetched</th>
-            <th>Last seen</th>
-            <th>HTTP</th>
-            <th>Title</th>
+            <th>{t("pd.fetched")}</th>
+            <th>{t("pd.lastseen")}</th>
+            <th>{t("pd.http")}</th>
+            <th>{t("pd.title")}</th>
           </tr>
         </thead>
         <tbody>
@@ -943,25 +1263,25 @@ export const PageDetailPage: FC<{ principal: Principal; t: Translate; page: Moni
         </tbody>
       </table>
     </div>
-    <h2>Changes ({changes.length})</h2>
-    <div class="card flat">
+    <h2>{t("pd.changes", { n: changes.length })}</h2>
+    <div class="card flat scrollx">
       <table>
         <tbody>
           {changes.map((c) => (
             <tr>
               <td>{fmtDate(c.detected_at)}</td>
-              <td>significance {c.significance}</td>
-              <td>{JSON.parse(c.signals_json).join(", ")}</td>
+              <td>{t("pd.significance", { n: c.significance })}</td>
+              <td>{signalLabels(t, c.signals_json)}</td>
               <td>
-                <span class="badge">{c.analysis_status.replace(/_/g, " ")}</span>
+                <span class="badge">{t(`chg.${c.analysis_status}` as MessageKey)}</span>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
-    <h2>Latest extracted text</h2>
-    <pre>{latestText ?? "(no snapshot yet)"}</pre>
+    <h2>{t("pd.latest")}</h2>
+    <pre>{latestText ?? t("pd.nosnap")}</pre>
   </Layout>
 );
 
@@ -1510,8 +1830,17 @@ export const EventsTable: FC<{ events: EventRow[] }> = ({ events }) => (
   </table>
 );
 
-function humanMinutes(m: number): string {
-  if (m % 1440 === 0) return `${m / 1440}d`;
-  if (m % 60 === 0) return `${m / 60}h`;
-  return `${m}m`;
+/** Detector signal names ("price", "large_edit") are internal; show them translated. */
+function signalLabels(t: Translate, json: string): string {
+  try {
+    return (JSON.parse(json) as string[]).map((s) => t(`sig.${s}` as MessageKey)).join(", ");
+  } catch {
+    return "";
+  }
+}
+
+function humanMinutes(t: Translate, m: number): string {
+  if (m % 1440 === 0) return t("dur.d", { n: m / 1440 });
+  if (m % 60 === 0) return t("dur.h", { n: m / 60 });
+  return t("dur.m", { n: m });
 }

@@ -57,8 +57,8 @@ describe("discovery flow", () => {
     expect(comp.profile.sources.length).toBeGreaterThanOrEqual(2);
     expect(t.app.events.list({ type: "competitor.profiled" })).toHaveLength(1);
 
-    // The profile is shown on the business page and can be refreshed.
-    const page = await html(t.web, `/b/${b.id}`, s);
+    // The profile is shown on the competitors tab of the business page and can be refreshed.
+    const page = await html(t.web, `/b/${b.id}?tab=competitors`, s);
     expect(page.text).toContain("About Acme");
     expect((await json(t.web, `/api/competitors/${r.body.competitor.id}/profile`, { method: "POST", session: s })).status).toBe(200);
   });
