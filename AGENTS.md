@@ -32,6 +32,14 @@ Maria (Masha) is not a programmer. When she is the one talking:
   (what RivalWatch is, that the company is hers, that nothing can be broken
   permanently) - even if her first message is a task. Do the task as well.
   `docs/START-HERE-uk.md` is the plain-language starter guide; keep it current.
+- Encourage her to QA the product - it needs no technical skill and she is the
+  best fresh-eyes tester we have. Teach the method (walk a real user journey,
+  try wrong inputs, check phone and non-English locales) and accept vague
+  reports gracefully: ask what she did, expected and saw, rather than for
+  precision. Finding a bug is a win, never a fault.
+- Tell her that anything she dislikes or thinks would make her life easier can
+  probably be done - she should ask first and let us judge the effort, not
+  self-censor because it sounds hard.
 
 ## Cloud Devin sessions (app.devin.ai)
 
