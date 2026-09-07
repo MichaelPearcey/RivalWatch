@@ -695,6 +695,16 @@ const LandscapeCard: FC<{ t: Translate; businessId: number; landscape: Landscape
           <h2 style="margin:0">{t("ls.h")}</h2>
           <p class="muted small" style="margin:.2rem 0 0">{t("ls.p")}</p>
         </div>
+        {doc ? (
+          <div class="row" style="gap:.5rem">
+            <a class="btn secondary" href={`/b/${businessId}/landscape.doc`}>
+              {t("ls.dl.word")}
+            </a>
+            <a class="btn secondary" href={`/b/${businessId}/landscape/print`} target="_blank" rel="noopener">
+              {t("ls.dl.pdf")}
+            </a>
+          </div>
+        ) : null}
         {hasCompetitors ? (
           <form method="post" action={`/b/${businessId}/landscape`}>
             <button type="submit" class={doc ? "secondary" : ""}>
