@@ -61,9 +61,11 @@ Everything below is live and tested (`npm run check`, ~130 tests, offline).
    `RIVALWATCH_API_KEY` = an admin's API key). If you lack the key, ask the
    owner; do not guess at requests.
 2. **Never push to `main` directly from a cloud session.** Open a pull request;
-   CI runs `npm run check`; a human merges (Railway deploys `main`). The local
+   CI runs `npm run check`; an admin merges (Railway deploys `main`). The local
    CLI session run by the owner is the only place that pushes to `main`, and
-   even that should move to PRs.
+   even that should move to PRs. **Both admins approve for themselves** - Maria
+   does not need Michael's sign-off to ship; the PR is the undo mechanism, not a
+   permission gate, and anything merged can be reverted on request.
 3. **No secrets in the repo or in memory notes.** Production secrets live in
    Railway variables; local ones in `.env` (gitignored).
 4. Consequential actions (spending, vendors, plan changes, deleting data,

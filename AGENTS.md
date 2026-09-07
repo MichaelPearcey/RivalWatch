@@ -46,14 +46,21 @@ Maria (Masha) is not a programmer. When she is the one talking:
 - Fresh VM: `npm ci && npm run check`. Tests are offline (in-memory SQLite, no
   Docker, no secrets). Without `ANTHROPIC_API_KEY` the app uses the heuristic
   analyser - fine for development.
-- **Open pull requests; never push to `main`.** CI runs `npm run check`; a human
+- **Open pull requests; never push to `main`.** CI runs `npm run check`; an admin
   merges; Railway deploys `main` automatically. Keep PRs small and single-purpose,
   with a plain-language description (the reviewer may not be an engineer).
-- If shared-memory credentials are absent, ask the owner rather than guessing
+- **Maria approves for herself.** Either admin can merge and ship; work she asks
+  for does not wait on Michael. The PR still exists - it is the undo mechanism,
+  not a permission gate - and any merged change can be reverted on request.
+- If shared-memory credentials are absent, ask an admin rather than guessing
   what was requested. Do not add secrets to the repo, to memory notes, or to PRs.
 - Consequential actions (spending, vendors, plan changes, deleting data,
-  infrastructure) need explicit owner approval - propose in the PR description
-  or a memory `request`, do not act.
+  infrastructure) need explicit approval from an admin - propose in the PR
+  description or a memory `request`, do not act.
+- Michael-only work: buying a domain and pointing DNS, Railway/Resend account
+  and billing setup, and standing up separate test and live environments. If
+  Maria asks to "launch the website", explain that these steps need Michael,
+  that they are quick, and flag them to him.
 
 ## Environment quirks (founding machine, Windows)
 
@@ -133,8 +140,10 @@ Autonomous: scans, analysis, reading metrics, adding pages for existing
 customers, drafting content. Manager-AI approval: global cadence changes,
 prompt changes, bulk email, pausing customers. Human approval: pricing/plan
 changes, new paid vendors, infrastructure, deleting customer data, spending.
-Devin must not activate paid services or deploy infrastructure without owner
-approval; propose first.
+Devin must not activate paid services or deploy infrastructure without approval;
+propose first. "Human" means either admin - Michael or Maria - except where the
+action needs Michael's accounts or money (domains, DNS, vendor billing,
+environments).
 
 ## Testing guidance
 
