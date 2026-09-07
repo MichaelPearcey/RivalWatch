@@ -23,6 +23,7 @@ Read `docs/` first if you are new (human or agent):
 - `docs/05-external-services.md` - services/credentials
 - `docs/06-roadmap.md` - what comes next
 - `docs/07-deployment.md` - Railway deployment, env vars, secrets, costs, runbook
+- `docs/START-HERE-uk.md` - plain-language introduction in Ukrainian (non-technical)
 
 ## Requirements
 

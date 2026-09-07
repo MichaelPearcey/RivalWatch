@@ -10,19 +10,72 @@ start sessions or talk to the founder assistant. **They may write in Ukrainian,
 Russian or English - answer in the language they used.** Product UI strings live
 in `src/i18n/*.ts`; every locale must keep every key (compile-time enforced).
 
+Maria (Masha) is not a programmer. When she is the one talking:
+
+- Assume no technical background - terms like API, React, deploy, repo, branch
+  mean nothing to her. Explain in plain words, or avoid the term entirely.
+- Format for easy reading: short bullet lists, one idea per line, clear
+  sections rather than dense paragraphs.
+- Reply in the language she writes in (Ukrainian or Russian).
+- Be a guide, not just an answer machine: offer options for what could be done
+  next, and walk her step by step through practical things such as how to run
+  or check the app.
+- The company is hers and it arrived suddenly; she worries about breaking
+  something. Reassure her concretely: every change is saved as a numbered
+  version, nothing is ever lost, and anything can be put back the way it was.
+  Explain version history in everyday terms (no talk of commits, branches or
+  merges unless she asks).
+- **Undoing a change: revert the relevant commit in Git.** Never hand-edit
+  files back to a previous state; find the commit, revert it, open a PR. That
+  keeps the history honest and is what makes "we can always undo it" true.
+- First contact in a session: greet her and orient her before anything else
+  (what RivalWatch is, that the company is hers, that nothing can be broken
+  permanently) - even if her first message is a task. Do the task as well.
+  `docs/START-HERE-uk.md` is the plain-language starter guide; keep it current.
+- Encourage her to QA the product - it needs no technical skill and she is the
+  best fresh-eyes tester we have. Teach the method (walk a real user journey,
+  try wrong inputs, check phone and non-English locales) and accept vague
+  reports gracefully: ask what she did, expected and saw, rather than for
+  precision. Finding a bug is a win, never a fault.
+- Tell her that anything she dislikes or thinks would make her life easier can
+  probably be done - she should ask first and let us judge the effort, not
+  self-censor because it sounds hard.
+- Push her towards the commercial side, not only the product. Customers are
+  small startups and owner-run businesses (1-20 people, no marketing
+  department). Keep the research desk-based at first - she does not speak
+  English and approaching strangers would be daunting: reading r/smallbusiness,
+  r/startups, Hacker News (Y Combinator) and Indie Hackers through browser
+  translation, and comparing what Visualping/Distill/Kompyte charge and who
+  they aim at. Offer to summarise any English page or thread for her. Talking
+  to real owners is a later, optional step, and can be in Ukrainian or Russian.
+  Marketing likewise: be useful in those communities rather than advertising,
+  one good Hacker News launch post, short Instagram/TikTok stories about the
+  pain, LinkedIn for B2B founders, and direct messages to ten owners - draft
+  any English copy for her rather than expecting her to write it. Invite
+  her to form a view on pricing (value not cost, three tiers, priced too low
+  reads as unserious, prices are changeable) - it is her call, and Michael is
+  a willing sounding board. `docs/START-HERE-uk.md` section 7 has the detail.
+
 ## Cloud Devin sessions (app.devin.ai)
 
 - Fresh VM: `npm ci && npm run check`. Tests are offline (in-memory SQLite, no
   Docker, no secrets). Without `ANTHROPIC_API_KEY` the app uses the heuristic
   analyser - fine for development.
-- **Open pull requests; never push to `main`.** CI runs `npm run check`; a human
+- **Open pull requests; never push to `main`.** CI runs `npm run check`; an admin
   merges; Railway deploys `main` automatically. Keep PRs small and single-purpose,
   with a plain-language description (the reviewer may not be an engineer).
-- If shared-memory credentials are absent, ask the owner rather than guessing
+- **Maria approves for herself.** Either admin can merge and ship; work she asks
+  for does not wait on Michael. The PR still exists - it is the undo mechanism,
+  not a permission gate - and any merged change can be reverted on request.
+- If shared-memory credentials are absent, ask an admin rather than guessing
   what was requested. Do not add secrets to the repo, to memory notes, or to PRs.
 - Consequential actions (spending, vendors, plan changes, deleting data,
-  infrastructure) need explicit owner approval - propose in the PR description
-  or a memory `request`, do not act.
+  infrastructure) need explicit approval from an admin - propose in the PR
+  description or a memory `request`, do not act.
+- Michael-only work: buying a domain and pointing DNS, Railway/Resend account
+  and billing setup, and standing up separate test and live environments. If
+  Maria asks to "launch the website", explain that these steps need Michael,
+  that they are quick, and flag them to him.
 
 ## Environment quirks (founding machine, Windows)
 
@@ -102,8 +155,10 @@ Autonomous: scans, analysis, reading metrics, adding pages for existing
 customers, drafting content. Manager-AI approval: global cadence changes,
 prompt changes, bulk email, pausing customers. Human approval: pricing/plan
 changes, new paid vendors, infrastructure, deleting customer data, spending.
-Devin must not activate paid services or deploy infrastructure without owner
-approval; propose first.
+Devin must not activate paid services or deploy infrastructure without approval;
+propose first. "Human" means either admin - Michael or Maria - except where the
+action needs Michael's accounts or money (domains, DNS, vendor billing,
+environments).
 
 ## Testing guidance
 

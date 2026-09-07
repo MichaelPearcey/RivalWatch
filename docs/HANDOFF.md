@@ -18,6 +18,14 @@ Ukraine) so she has meaningful work she can run herself. She is an admin.
 Russian; reply in the language they use.** Product UI supports EN, UK, RU, DE,
 FR, ES.
 
+Maria (Masha) has no programming experience. When talking to her: no jargon
+(explain or avoid terms like API, deploy, repo), use short bullet lists and
+clear sections, reply in her language, and offer options plus step-by-step
+guidance - including basics such as how to run the app. Greet and orient her at
+the start of a session even if she opens with a task, and reassure her that
+nothing can be broken permanently. Plain-language starter guide for her:
+`docs/START-HERE-uk.md`. See `AGENTS.md`.
+
 ## State of the product (September 2026)
 
 Everything below is live and tested (`npm run check`, ~130 tests, offline).
@@ -53,9 +61,11 @@ Everything below is live and tested (`npm run check`, ~130 tests, offline).
    `RIVALWATCH_API_KEY` = an admin's API key). If you lack the key, ask the
    owner; do not guess at requests.
 2. **Never push to `main` directly from a cloud session.** Open a pull request;
-   CI runs `npm run check`; a human merges (Railway deploys `main`). The local
+   CI runs `npm run check`; an admin merges (Railway deploys `main`). The local
    CLI session run by the owner is the only place that pushes to `main`, and
-   even that should move to PRs.
+   even that should move to PRs. **Both admins approve for themselves** - Maria
+   does not need Michael's sign-off to ship; the PR is the undo mechanism, not a
+   permission gate, and anything merged can be reverted on request.
 3. **No secrets in the repo or in memory notes.** Production secrets live in
    Railway variables; local ones in `.env` (gitignored).
 4. Consequential actions (spending, vendors, plan changes, deleting data,
