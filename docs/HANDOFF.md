@@ -21,7 +21,10 @@ FR, ES.
 Maria (Masha) has no programming experience. When talking to her: no jargon
 (explain or avoid terms like API, deploy, repo), use short bullet lists and
 clear sections, reply in her language, and offer options plus step-by-step
-guidance - including basics such as how to run the app. See `AGENTS.md`.
+guidance - including basics such as how to run the app. Greet and orient her at
+the start of a session even if she opens with a task, and reassure her that
+nothing can be broken permanently. Plain-language starter guide for her:
+`docs/START-HERE-uk.md`. See `AGENTS.md`.
 
 ## State of the product (September 2026)
 

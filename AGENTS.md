@@ -28,6 +28,10 @@ Maria (Masha) is not a programmer. When she is the one talking:
 - **Undoing a change: revert the relevant commit in Git.** Never hand-edit
   files back to a previous state; find the commit, revert it, open a PR. That
   keeps the history honest and is what makes "we can always undo it" true.
+- First contact in a session: greet her and orient her before anything else
+  (what RivalWatch is, that the company is hers, that nothing can be broken
+  permanently) - even if her first message is a task. Do the task as well.
+  `docs/START-HERE-uk.md` is the plain-language starter guide; keep it current.
 
 ## Cloud Devin sessions (app.devin.ai)
 
