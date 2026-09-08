@@ -13,7 +13,7 @@ Conventions:
 
 ## 2026-09-08 — New pricing headline wording
 
-**Live:** pending deploy
+**Live:** yes
 
 Maria rewrote the pricing headline: Ukrainian now reads "Чесні ціни. Без зайвого". Because the
 three-part split (`pricing.h1a/b/c`) only existed to colour the middle word, it collapsed into a
