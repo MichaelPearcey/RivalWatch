@@ -11,6 +11,19 @@ Conventions:
 
 ---
 
+## 2026-09-08 — New pricing headline wording
+
+**Live:** pending deploy
+
+Maria rewrote the pricing headline: Ukrainian now reads "Чесні ціни. Без зайвого". Because the
+three-part split (`pricing.h1a/b/c`) only existed to colour the middle word, it collapsed into a
+single `pricing.h1` key, and the other five locales got the same two-sentence phrasing
+(en "Honest pricing. Nothing extra", ru "Честные цены. Без лишнего", plus de/fr/es).
+
+Not covered: only Ukrainian wording is native-speaker approved; the other five are my translations.
+
+---
+
 ## 2026-09-08 — Plain pricing headline
 
 **Live:** yes

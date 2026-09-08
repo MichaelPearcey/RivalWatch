@@ -73,9 +73,7 @@ export const en = {
 
   // pricing
   "pricing.eyebrow": "Pricing",
-  "pricing.h1a": "Simple,",
-  "pricing.h1b": "honest",
-  "pricing.h1c": "pricing",
+  "pricing.h1": "Honest pricing. Nothing extra",
   "pricing.lead": "Prices in GBP, VAT included where applicable. Monthly, cancel any time.",
   "pricing.popular": "Most popular",
   "pricing.month": "/month",

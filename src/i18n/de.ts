@@ -69,9 +69,7 @@ export const de: Record<keyof typeof en, string> = {
   "example.evidence": "Beleg:",
 
   "pricing.eyebrow": "Preise",
-  "pricing.h1a": "Einfache,",
-  "pricing.h1b": "ehrliche",
-  "pricing.h1c": "Preise",
+  "pricing.h1": "Ehrliche Preise. Ohne Ballast",
   "pricing.lead": "Preise in GBP, ggf. inkl. MwSt. Monatlich, jederzeit kündbar.",
   "pricing.popular": "Am beliebtesten",
   "pricing.month": "/Monat",

@@ -66,7 +66,7 @@ describe("language in the app", () => {
     expect(cookie).toBe("rw_lang=uk");
     const uk = await (await t.web.request(`${t.base}/pricing`, { headers: { cookie } })).text();
     expect(uk).toContain('<html lang="uk">');
-    expect(uk).toContain("Прості,");
+    expect(uk).toContain("Чесні ціни. Без зайвого");
 
     // Unknown language is ignored; external referer is not followed.
     const bad = await t.web.request(`${t.base}/lang?lang=klingon`, { headers: { referer: "https://evil.example/" } });

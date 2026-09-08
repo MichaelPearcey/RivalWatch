@@ -69,9 +69,7 @@ export const uk: Record<keyof typeof en, string> = {
   "example.evidence": "Докази:",
 
   "pricing.eyebrow": "Ціни",
-  "pricing.h1a": "Прості,",
-  "pricing.h1b": "чесні",
-  "pricing.h1c": "ціни",
+  "pricing.h1": "Чесні ціни. Без зайвого",
   "pricing.lead": "Ціни у GBP, з ПДВ де застосовно. Щомісячно, скасування будь-коли.",
   "pricing.popular": "Найпопулярніший",
   "pricing.month": "/міс",
