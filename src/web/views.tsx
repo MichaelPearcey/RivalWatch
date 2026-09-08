@@ -307,7 +307,7 @@ export const PricingPage: FC<{ principal?: Principal | undefined; t: Translate }
     <section class="center" style="padding:3rem 0 2rem">
       <span class="eyebrow">{t("pricing.eyebrow")}</span>
       <h1 style="font-size:clamp(2rem,5vw,3.2rem);letter-spacing:-.03em">
-        {t("pricing.h1a")} <span class="gradient">{t("pricing.h1b")}</span> {t("pricing.h1c")}
+        {t("pricing.h1a")} {t("pricing.h1b")} {t("pricing.h1c")}
       </h1>
       <p class="muted" style="font-size:1.1rem">{t("pricing.lead")}</p>
     </section>

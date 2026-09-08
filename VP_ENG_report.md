@@ -11,6 +11,16 @@ Conventions:
 
 ---
 
+## 2026-09-08 — Plain pricing headline
+
+**Live:** yes
+
+Maria asked for the coloured word in the pricing headline to go: "Прості, **чесні** ціни" is now one
+solid colour (the gradient span was removed from the pricing `h1`). The gradient stays on the home-page
+hero, which is the brand element — say if that one should go plain too.
+
+---
+
 ## 2026-09-07 — Ukrainian runtime localization fixes
 
 **Commits:** `fb3534e`, `74f634d`, `4e3d9c7`, `9f6fe8f` · **PR:** [#7](https://github.com/MichaelPearcey/RivalWatch/pull/7) · **Live:** yes
