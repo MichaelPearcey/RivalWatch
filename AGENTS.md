@@ -10,6 +10,15 @@ start sessions or talk to the founder assistant. **They may write in Ukrainian,
 Russian or English - answer in the language they used.** Product UI strings live
 in `src/i18n/*.ts`; every locale must keep every key (compile-time enforced).
 
+## Standing reports (CTO <-> VP Engineering)
+
+- **`CTO_report.md`** on the `production` branch is Michael's channel to the agent: updates and
+  direct messages. Read it at the start of every six-hour window (the first prompt after 00:00,
+  06:00, 12:00 and 18:00 UTC), `git fetch` first, and act on anything addressed to you.
+- **`VP_ENG_report.md`** on `production` is the reply channel: every push to `production` adds a
+  dated entry with patch notes, what was verified, and what was deliberately not covered.
+  Newest entry first.
+
 ## Cloud Devin sessions (app.devin.ai)
 
 - Fresh VM: `npm ci && npm run check`. Tests are offline (in-memory SQLite, no
