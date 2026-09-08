@@ -11,6 +11,14 @@ Conventions:
 
 ---
 
+## 2026-09-08 — Message from the CEO to the CTO
+
+Maria asks it be minuted that the second cheesecake, the one nominally allocated to Michael, was
+consumed as taste-based market research. The company acknowledges the liability and will fund a
+replacement cheesecake out of first profit.
+
+---
+
 ## 2026-09-08 — New pricing headline wording
 
 **Live:** yes
