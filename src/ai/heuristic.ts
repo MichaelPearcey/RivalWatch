@@ -1,30 +1,33 @@
 import type { InsightCategory } from "../db/repo.js";
+import { currencyOf, formatMoney, moneyPattern, parseAmount, periodOf } from "../money.js";
 import type { AnalysisInput, AnalysisResult, Analyzer, InsightDraft } from "./types.js";
 
 interface Money {
   raw: string;
   symbol: string;
+  /** ISO code, so prices in different currencies are never compared. */
+  currency: string | null;
   amount: number;
   period: string | null;
 }
 
-const MONEY_RE = /([£$€])\s?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)(?:\s?\/\s?(month|mo|year|yr|user|seat))?/gi;
-
 export function parseMoney(text: string): Money[] {
   const out: Money[] = [];
-  for (const m of text.matchAll(MONEY_RE)) {
+  for (const m of text.matchAll(moneyPattern())) {
+    const symbol = (m[1] ?? m[4])!;
     out.push({
       raw: m[0].replace(/\s+/g, ""),
-      symbol: m[1]!,
-      amount: Number(m[2]!.replace(/,/g, "")),
-      period: m[3] ? (m[3].startsWith("y") ? "year" : m[3].startsWith("m") ? "month" : m[3]) : null,
+      symbol,
+      currency: currencyOf(symbol),
+      amount: parseAmount((m[2] ?? m[3])!),
+      period: periodOf(m[5]),
     });
   }
   return out;
 }
 
 function fmt(m: Money): string {
-  return `${m.symbol}${m.amount}${m.period ? `/${m.period}` : ""}`;
+  return formatMoney(m.currency, m.amount, m.period);
 }
 
 function pct(from: number, to: number): string {
@@ -150,7 +153,8 @@ export class HeuristicAnalyzer implements Analyzer {
   private compareToOwnPricing(pricingNotes: string | null, theirs: Money[]): string | null {
     if (!pricingNotes || theirs.length === 0) return null;
     const monthly = (m: Money) => (m.period === "year" ? m.amount / 12 : m.amount);
-    const mine = parseMoney(pricingNotes);
+    const currency = theirs[0]!.currency;
+    const mine = parseMoney(pricingNotes).filter((m) => m.currency === currency);
     if (mine.length === 0) return null;
     const mineMonthly = mine.filter((m) => m.period !== "year");
 
@@ -160,7 +164,7 @@ export class HeuristicAnalyzer implements Analyzer {
       if (candidates.length === 0) continue;
       const nearest = candidates.reduce((a, b) => (Math.abs(monthly(b) - monthly(t)) < Math.abs(monthly(a) - monthly(t)) ? b : a));
       const diff = ((monthly(t) - monthly(nearest)) / monthly(nearest)) * 100;
-      const theirLabel = t.period === "year" ? `${fmt(t)} (≈${t.symbol}${(t.amount / 12).toFixed(2)}/month)` : fmt(t);
+      const theirLabel = t.period === "year" ? `${fmt(t)} (≈${formatMoney(t.currency, Number((t.amount / 12).toFixed(2)), "month")})` : fmt(t);
       if (Math.abs(diff) < 1) sentences.push(`Their ${theirLabel} now matches your ${fmt(nearest)}.`);
       else sentences.push(`Their ${theirLabel} is ${Math.abs(diff).toFixed(0)}% ${diff > 0 ? "above" : "below"} your nearest tier (${fmt(nearest)}).`);
     }

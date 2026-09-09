@@ -30,6 +30,11 @@ describe("extractFromHtml", () => {
     expect(out.meta.prices).toEqual(expect.arrayContaining(["£19/month", "$199/year", "1,299GBP"]));
   });
 
+  it("finds hryvnia prices written after the amount", () => {
+    const out = extractFromHtml(page("<p>Базовий 800 грн/міс., Преміум 1 500 ₴/міс.</p>"));
+    expect(out.meta.prices).toEqual(expect.arrayContaining(["800грн/міс.", "1500₴/міс."]));
+  });
+
   it("flags thin JS-rendered pages", () => {
     const out = extractFromHtml(page("<div id='app'></div>"));
     expect(out.meta.thin).toBe(true);

@@ -183,7 +183,7 @@ export const ru: Record<keyof typeof en, string> = {
   "biz.website": "Сайт",
   "biz.desc": "Что вы делаете и для кого?",
   "biz.pricing": "Ваши цены (свободный текст)",
-  "biz.pricing.ph": "Starter 25 £/мес., Studio 55 £/мес.",
+  "biz.pricing.ph": "Базовый 800 грн/мес., Премиум 1500 грн/мес.",
   "biz.create": "Создать бизнес",
   "err.validation": "Проверьте, пожалуйста, форму: что-то обязательное не заполнено или имеет неверный формат.",
 

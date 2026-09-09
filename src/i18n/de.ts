@@ -183,7 +183,7 @@ export const de: Record<keyof typeof en, string> = {
   "biz.website": "Website",
   "biz.desc": "Was tun Sie, und für wen?",
   "biz.pricing": "Ihre Preise (Freitext)",
-  "biz.pricing.ph": "Starter 25 £/Monat, Studio 55 £/Monat",
+  "biz.pricing.ph": "Starter 25 €/Monat, Studio 55 €/Monat",
   "biz.create": "Unternehmen anlegen",
   "err.validation": "Bitte prüfen Sie das Formular: Eine Pflichtangabe fehlt oder hat das falsche Format.",
 

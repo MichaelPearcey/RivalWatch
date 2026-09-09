@@ -12,9 +12,19 @@ const base = (change: Partial<AnalysisInput["change"]>, kind: AnalysisInput["pag
 describe("parseMoney", () => {
   it("parses symbols, thousands separators and periods", () => {
     expect(parseMoney("£49/month and $1,299.50/year and €9")).toEqual([
-      { raw: "£49/month", symbol: "£", amount: 49, period: "month" },
-      { raw: "$1,299.50/year", symbol: "$", amount: 1299.5, period: "year" },
-      { raw: "€9", symbol: "€", amount: 9, period: null },
+      { raw: "£49/month", symbol: "£", currency: "GBP", amount: 49, period: "month" },
+      { raw: "$1,299.50/year", symbol: "$", currency: "USD", amount: 1299.5, period: "year" },
+      { raw: "€9", symbol: "€", currency: "EUR", amount: 9, period: null },
+    ]);
+  });
+
+  it("parses hryvnia written after the amount, in Ukrainian and Russian", () => {
+    expect(parseMoney("800 грн/міс. і 12 000 грн/рік")).toEqual([
+      { raw: "800грн/міс.", symbol: "грн", currency: "UAH", amount: 800, period: "month" },
+      { raw: "12000грн/рік", symbol: "грн", currency: "UAH", amount: 12000, period: "year" },
+    ]);
+    expect(parseMoney("₴1 500/мес.")).toEqual([
+      { raw: "₴1500/мес.", symbol: "₴", currency: "UAH", amount: 1500, period: "month" },
     ]);
   });
 });
@@ -36,6 +46,12 @@ describe("HeuristicAnalyzer", () => {
     const r = await a.analyze(base({ added: ["£399/year"], signals: ["price"] }));
     expect(r.draft.headline).toContain("new price point");
     expect(r.draft.why_it_matters).toContain("annual option");
+  });
+
+  it("reports a hryvnia price move and does not compare it with pounds", async () => {
+    const r = await a.analyze(base({ removed: ["800 грн/міс."], added: ["950 грн/міс."], signals: ["price"] }));
+    expect(r.draft.headline).toContain("800 ₴/month → 950 ₴/month (+19%)");
+    expect(r.draft.why_it_matters).not.toContain("£");
   });
 
   it("classifies promotions", async () => {

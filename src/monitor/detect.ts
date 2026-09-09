@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { diffLines } from "diff";
 import type { PageKind } from "../db/repo.js";
+import { pricePattern } from "../money.js";
 
 export type Signal = "price" | "percentage" | "promo" | "launch" | "announcement" | "large_edit" | "heading";
 
@@ -23,7 +24,7 @@ export interface DetectOptions {
 
 export const DEFAULT_THRESHOLD = 0.15;
 
-const PRICE_RE = /(?:[£$€]\s?\d|\d\s?(?:GBP|USD|EUR)\b|\/\s?(?:mo|month|yr|year)\b)/i;
+const PRICE_RE = pricePattern();
 const PCT_RE = /\d+\s?%/;
 const PROMO_RE = /\b(?:sale|discount|off\b|coupon|promo|deal|save|free trial|limited time|black friday|offer)\b/i;
 const LAUNCH_RE = /\b(?:new|launch(?:ed|ing)?|introducing|now available|coming soon|beta|announc\w+|release[sd]?)\b/i;

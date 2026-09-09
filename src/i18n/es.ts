@@ -183,7 +183,7 @@ export const es: Record<keyof typeof en, string> = {
   "biz.website": "Sitio web",
   "biz.desc": "¿Qué haces y para quién?",
   "biz.pricing": "Tus precios (texto libre)",
-  "biz.pricing.ph": "Starter 25 £/mes, Studio 55 £/mes",
+  "biz.pricing.ph": "Starter 25 €/mes, Studio 55 €/mes",
   "biz.create": "Crear negocio",
   "err.validation": "Revisa el formulario: falta algo obligatorio o tiene un formato incorrecto.",
 

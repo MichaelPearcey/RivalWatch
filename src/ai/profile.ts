@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CompetitorProfile } from "../db/repo.js";
 import { translator, type Translate } from "../i18n/index.js";
+import { moneyPattern } from "../money.js";
 import type { JsonLlm } from "./llm.js";
 
 export interface ProfileSource {
@@ -42,7 +43,7 @@ export function heuristicProfile(name: string, sources: ProfileSource[], t: Tran
   const home = sources.find((s) => s.kind === "home") ?? sources[0];
   const lines = (home?.text ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
   const headings = lines.filter((l) => l.length >= 12 && l.length <= 90 && !/[.!?]$/.test(l) && !/^["“”']/.test(l) && !/\b(?:visitors?|views?|likes?|followers?|today|<\w+>)\b|\d{3,}/i.test(l)).slice(0, 5);
-  const prices = [...new Set(sources.flatMap((s) => s.text.match(/[£$€]\s?\d[\d,]*(?:\.\d{2})?(?:\s?\/\s?(?:month|mo|year|yr))?/gi) ?? []))].slice(0, 8);
+  const prices = [...new Set(sources.flatMap((s) => s.text.match(moneyPattern()) ?? []))].slice(0, 8);
   return {
     summary: home?.title ? `${name} — "${home.title}". ${lines.find((l) => l.length > 60)?.slice(0, 220) ?? ""}`.trim() : `${name}. ${lines.slice(0, 2).join(" ").slice(0, 220)}`,
     target_customers: t("profile.unknown"),

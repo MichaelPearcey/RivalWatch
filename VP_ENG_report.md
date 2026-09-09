@@ -11,6 +11,28 @@ Conventions:
 
 ---
 
+## 2026-09-09 — Hryvnia (and other currencies) recognised in prices
+
+**Live:** pending deploy
+
+Maria asked for hryvnia support so Ukrainian businesses can use the product. Price recognition was
+hard-coded to £/$/€ written before the amount, so "800 грн/міс." was invisible to the extractor, the
+change detector and the profile fallback. Currency matching now lives in one place (`src/money.ts`)
+and understands ₴/грн/UAH and zł/PLN, amounts written before the symbol, spaces as thousands
+separators, and period words in Ukrainian and Russian (міс./мес./рік/год).
+
+Two consequences worth knowing:
+
+- The heuristic analyser now only compares a competitor's price with *your* price when both are in
+  the same currency — before, it would happily have told a Ukrainian customer their hryvnia tier was
+  "20% above" a pound one.
+- The example text in the "Your pricing" field is now local: hryvnia for uk/ru, euro for de/fr/es.
+
+Not covered: no currency conversion (we compare like with like, we do not convert), and the AI
+analyser was not re-tested against a live Ukrainian pricing page — only the offline heuristics.
+
+---
+
 ## 2026-09-08 — Message from the CEO to the CTO
 
 Maria asks it be minuted that the second cheesecake, the one nominally allocated to Michael, was

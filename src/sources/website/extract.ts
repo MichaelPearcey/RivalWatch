@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { moneyPattern } from "../../money.js";
 
 export interface Extracted {
   title: string | null;
@@ -46,8 +47,8 @@ const BLOCK_TAGS = new Set([
   "br", "hr", "summary", "details",
 ]);
 
-// Currency amounts like £49, $1,299.00, €9.99, 49 GBP, "49/mo"
-const PRICE_RE = /(?:[£$€]\s?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?\s?(?:GBP|USD|EUR))(?:\s?\/\s?(?:month|mo|year|yr|user|seat))?/gi;
+// Currency amounts like £49, $1,299.00, €9.99, 49 GBP, 800 грн, "49/mo"
+const PRICE_RE = moneyPattern();
 
 /**
  * Replace volatile tokens so that harmless churn (dates, counters, nonces)
