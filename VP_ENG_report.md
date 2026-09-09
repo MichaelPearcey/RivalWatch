@@ -11,6 +11,22 @@ Conventions:
 
 ---
 
+## 2026-09-09 — AI told not to mix currencies, and to write proper Ukrainian
+
+**Live:** pending deploy
+
+QA of the generated landscape found the model describing a pound price as "набагато більше" than a
+hryvnia one (no conversion exists, and none should), mislabelling an annual total as monthly, and
+producing broken agreement ("з простим пропозицією", "вашу позиціонування"). The three prompts
+(landscape, competitor profile, change analysis) now forbid comparing or converting across
+currencies, require the source's own currency and billing period, and ask explicitly for
+grammatically correct prose in the target language rather than a word-by-word translation.
+
+Not covered: this steers the model, it does not guarantee the output — the wording still needs a
+native-speaker eye, and Maria's review is the real test.
+
+---
+
 ## 2026-09-09 — Long prices are no longer truncated
 
 **Live:** pending deploy
