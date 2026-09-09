@@ -8,15 +8,20 @@ const SYMBOL = "[£$€₴]";
 const CODE = "(?:GBP|USD|EUR|UAH|PLN|грн\\.?|zł)";
 const AMOUNT = "\\d{1,3}(?:[ \u00a0,]\\d{3})*(?:[.,]\\d{1,2})?";
 const PERIOD = "(?:months?|mo|years?|yr|user|seat|міс\\.?|мес\\.?|рік|год)";
+/** Stops "100 Gbps" and "20 EURO" being read as currency codes. */
+const NOT_WORD = "(?![\\p{L}\\d])";
 
 /** Matches one amount. Groups: 1+2 = symbol-first, 3+4 = amount-first, 5 = period. */
 export function moneyPattern(flags = "gi"): RegExp {
-  return new RegExp(`(?:(${SYMBOL})\\s?(${AMOUNT})|(${AMOUNT})\\s?(${SYMBOL}|${CODE}))(?:\\s?/\\s?(${PERIOD}))?`, flags);
+  return new RegExp(
+    `(?:(${SYMBOL})\\s?(${AMOUNT})|(${AMOUNT})\\s?(${SYMBOL}|${CODE})${NOT_WORD})(?:\\s?/\\s?(${PERIOD}))?`,
+    `${flags}u`,
+  );
 }
 
 /** Cheap "does this line talk about money at all" test, including a bare "/mo". */
 export function pricePattern(): RegExp {
-  return new RegExp(`(?:${SYMBOL}\\s?\\d|\\d\\s?${CODE}|/\\s?${PERIOD}\\b)`, "i");
+  return new RegExp(`(?:${SYMBOL}\\s?\\d|\\d\\s?${CODE}${NOT_WORD}|/\\s?${PERIOD}\\b)`, "iu");
 }
 
 const CURRENCIES: Record<string, string> = {

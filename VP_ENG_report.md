@@ -11,6 +11,20 @@ Conventions:
 
 ---
 
+## 2026-09-09 — "100 Gbps" is no longer read as a price
+
+**Live:** pending deploy
+
+QA against a real host (krystal.io) showed the new currency matcher recording "100 Gbp" and
+"2,000 Gbp" as prices, from "100 Gbps connectivity" and "2,000 Gbps DDoS protection". Currency codes
+now have to end a word, so bandwidth, EURO-zone and similar near-misses are ignored. Real prices on
+the same page were extracted correctly before and after.
+
+Not covered: the AI analyser had already been ignoring these false prices, so the visible damage was
+limited to the stored page data.
+
+---
+
 ## 2026-09-09 — Legacy page encodings (windows-1251) decoded correctly
 
 **Live:** pending deploy

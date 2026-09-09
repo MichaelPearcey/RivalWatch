@@ -18,6 +18,10 @@ describe("parseMoney", () => {
     ]);
   });
 
+  it("ignores units that merely start with a currency code", () => {
+    expect(parseMoney("100 Gbps connectivity, 2,000 Gbps DDoS protection, 20 EURO-zone")).toEqual([]);
+  });
+
   it("parses hryvnia written after the amount, in Ukrainian and Russian", () => {
     expect(parseMoney("800 грн/міс. і 12 000 грн/рік")).toEqual([
       { raw: "800грн/міс.", symbol: "грн", currency: "UAH", amount: 800, period: "month" },
