@@ -11,6 +11,19 @@ Conventions:
 
 ---
 
+## 2026-09-09 — A stuck profile can be retried from the page
+
+**Live:** pending deploy
+
+If profile generation was interrupted (a deploy restart mid-request, for example), the competitor
+was left saying "Створюємо профіль…" forever with no button to try again — the retry button only
+existed once a profile had been produced. The button now also appears when there is no profile yet,
+and the card opens by default in that state instead of hiding it behind a collapsed heading.
+
+Not covered: nothing retries automatically; the customer still has to press the button.
+
+---
+
 ## 2026-09-09 — Root cause of the missing AI text: Ukrainian ran out of room
 
 **Live:** pending deploy

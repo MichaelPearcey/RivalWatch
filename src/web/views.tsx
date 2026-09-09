@@ -1085,7 +1085,7 @@ const ProfileCard: FC<{ t: Translate; competitor: Competitor }> = ({ t, competit
   const profile = competitor.profile_json ? (JSON.parse(competitor.profile_json) as CompetitorProfile) : null;
   if (competitor.profile_status === "none" && !profile) return null;
   return (
-    <details class="card flat" style="margin:.75rem 0 0" open={competitor.profile_status === "ready"}>
+    <details class="card flat" style="margin:.75rem 0 0" open={competitor.profile_status === "ready" || !profile}>
       <summary>
         <strong class="small">{t("profile.h", { name: competitor.name })}</strong>{" "}
         {competitor.profile_status === "pending" ? <span class="muted small">{t("profile.pending")}</span> : null}
@@ -1134,7 +1134,15 @@ const ProfileCard: FC<{ t: Translate; competitor: Competitor }> = ({ t, competit
             </form>
           </div>
         </div>
-      ) : null}
+      ) : (
+        <div class="row tiny muted" style="margin-top:.6rem">
+          <form method="post" action={`/competitors/${competitor.id}/profile`}>
+            <button class="tiny secondary" type="submit">
+              {t("profile.refresh")}
+            </button>
+          </form>
+        </div>
+      )}
     </details>
   );
 };
