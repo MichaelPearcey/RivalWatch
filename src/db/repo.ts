@@ -65,6 +65,8 @@ export interface Competitor {
   name: string;
   website: string;
   notes: string | null;
+  /** Prices typed in by the owner, for competitors whose prices we cannot read. */
+  pricing_notes: string | null;
   created_at: string;
   profile_json: string | null;
   profile_status: "none" | "pending" | "ready" | "failed";
@@ -438,6 +440,9 @@ export class Repo {
   }
   countCompetitors(accountId: number): number {
     return (this.db.prepare("SELECT COUNT(*) c FROM competitors WHERE account_id = ?").get(accountId) as { c: number }).c;
+  }
+  setCompetitorPricingNotes(accountId: number, id: number, notes: string | null): Competitor | undefined {
+    return this.db.prepare("UPDATE competitors SET pricing_notes = ? WHERE id = ? AND account_id = ? RETURNING *").get(notes, id, accountId) as Competitor | undefined;
   }
   setCompetitorProfile(id: number, status: Competitor["profile_status"], profile: CompetitorProfile | null, error: string | null = null): void {
     this.db
