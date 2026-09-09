@@ -11,6 +11,22 @@ Conventions:
 
 ---
 
+## 2026-09-09 — Text no longer stops mid-word ("GPU-інстанси £20")
+
+**Live:** pending deploy
+
+With the AI producing Ukrainian again, QA found sentences ending mid-word or mid-price. Cause: the
+length limits on each field chop at the exact character, and they were sized for English — Ukrainian
+says the same thing in noticeably more characters. The limits are now roughly double, and when text
+does have to be shortened it stops at the end of a sentence or word with a "…" instead of slicing
+through a word or a price. The AI is also now told never to relabel a monthly price as yearly.
+
+Not covered: QA also saw a monthly discount presented as a yearly figure and two clumsy Ukrainian
+phrases. Only the instruction changed; whether the model obeys it needs another look. Nothing forces
+grammatical prose — a native speaker still has to judge it.
+
+---
+
 ## 2026-09-09 — A stuck profile can be retried from the page
 
 **Live:** pending deploy
