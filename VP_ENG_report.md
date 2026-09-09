@@ -11,6 +11,30 @@ Conventions:
 
 ---
 
+## 2026-09-09 — Instagram-only competitors: what it would take (docs only, no code)
+
+**Live:** n/a — documentation.
+
+Maria's real case: comparing dance studios where one has a website and two have only Instagram.
+Those two competitors currently sit as "blocked by the site" and collect nothing, because
+Instagram's robots.txt is `Disallow: /` for everyone and its notice forbids automated collection
+without written permission. We obey it and will not work around it.
+
+`docs/08-instagram-source.md` sets out the only legitimate route — Meta's `business_discovery` API —
+split into Phase 1 (works for a business we own, **no App Review**, free: needs an IG Professional
+account, a linked Facebook Page, an app and a token in `META_IG_TOKEN` / `META_IG_USER_ID`) and
+Phase 2 (customer-facing, needs Meta App Review, weeks of queue). It also names the two limits worth
+knowing before we promise anything: the competitor must be a Business/Creator account, and prices
+are only visible when they are typed in captions — we do not read text in images.
+
+**Michael:** Phase 1 is four account steps and no spend; the build is roughly one session after the
+token exists.
+
+Not covered: nothing was built or called against Meta. Token cost, rate limits and whether Maria's
+two studios are professional accounts are all unverified.
+
+---
+
 ## 2026-09-09 — Text no longer stops mid-word ("GPU-інстанси £20")
 
 **Live:** pending deploy
