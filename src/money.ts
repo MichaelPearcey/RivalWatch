@@ -6,7 +6,9 @@
 
 const SYMBOL = "[£$€₴]";
 const CODE = "(?:GBP|USD|EUR|UAH|PLN|грн\\.?|zł)";
-const AMOUNT = "\\d{1,3}(?:[ \u00a0,]\\d{3})*(?:[.,]\\d{1,2})?";
+const AMOUNT = "(?:\\d{1,3}(?:[ \u00a0,]\\d{3})+|\\d+)(?:[.,]\\d{1,2})?";
+/** Never start reading an amount in the middle of a longer number. */
+const NOT_MID_NUMBER = "(?<![\\d.,])";
 const PERIOD = "(?:months?|mo|years?|yr|user|seat|міс\\.?|мес\\.?|рік|год)";
 /** Stops "100 Gbps" and "20 EURO" being read as currency codes. */
 const NOT_WORD = "(?![\\p{L}\\d])";
@@ -14,7 +16,7 @@ const NOT_WORD = "(?![\\p{L}\\d])";
 /** Matches one amount. Groups: 1+2 = symbol-first, 3+4 = amount-first, 5 = period. */
 export function moneyPattern(flags = "gi"): RegExp {
   return new RegExp(
-    `(?:(${SYMBOL})\\s?(${AMOUNT})|(${AMOUNT})\\s?(${SYMBOL}|${CODE})${NOT_WORD})(?:\\s?/\\s?(${PERIOD}))?`,
+    `${NOT_MID_NUMBER}(?:(${SYMBOL})\\s?(${AMOUNT})|(${AMOUNT})\\s?(${SYMBOL}|${CODE})${NOT_WORD})(?:\\s?/\\s?(${PERIOD}))?`,
     `${flags}u`,
   );
 }
@@ -50,7 +52,10 @@ export function periodOf(raw: string | undefined): string | null {
 }
 
 export function parseAmount(raw: string): number {
-  return Number(raw.replace(/[ \u00a0,]/g, ""));
+  const compact = raw.replace(/[ \u00a0]/g, "");
+  // A lone trailing comma with one or two digits is a decimal, not a group.
+  const normalised = /^\d+,\d{1,2}$/.test(compact) ? compact.replace(",", ".") : compact.replace(/,/g, "");
+  return Number(normalised);
 }
 
 /** Writes an amount the way its currency is normally written. */

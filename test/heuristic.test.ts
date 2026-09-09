@@ -18,6 +18,13 @@ describe("parseMoney", () => {
     ]);
   });
 
+  it("reads long ungrouped amounts whole and comma decimals as decimals", () => {
+    expect(parseMoney("31200грн/рік and 9,99 EUR")).toEqual([
+      { raw: "31200грн/рік", symbol: "грн", currency: "UAH", amount: 31200, period: "year" },
+      { raw: "9,99EUR", symbol: "EUR", currency: "EUR", amount: 9.99, period: null },
+    ]);
+  });
+
   it("ignores units that merely start with a currency code", () => {
     expect(parseMoney("100 Gbps connectivity, 2,000 Gbps DDoS protection, 20 EURO-zone")).toEqual([]);
   });

@@ -11,6 +11,20 @@ Conventions:
 
 ---
 
+## 2026-09-09 — Long prices are no longer truncated
+
+**Live:** pending deploy
+
+QA on a real Ukrainian host found "31200грн" stored as "200грн": the amount pattern only allowed
+three digits before a separator, so a price written without thousands separators lost its leading
+digits. Amounts may now be any length, and matching can no longer start in the middle of a number.
+While fixing it: "9,99 EUR" was read as 999, and is now 9.99 — a comma with one or two digits at the
+end is a decimal, not a thousands separator.
+
+Not covered: no rounding or currency conversion; we still store the price as the site writes it.
+
+---
+
 ## 2026-09-09 — "100 Gbps" is no longer read as a price
 
 **Live:** pending deploy
