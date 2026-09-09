@@ -11,6 +11,24 @@ Conventions:
 
 ---
 
+## 2026-09-09 — Legacy page encodings (windows-1251) decoded correctly
+
+**Live:** pending deploy
+
+Found while QA-ing the hryvnia work against a real Ukrainian host (hostprom.com): the fetcher decoded
+every page as UTF-8, so any site served in windows-1251 — still common across the Ukrainian and
+Russian web — arrived as replacement characters. The profile was unreadable and prices were reported
+as "not published" even though the page shows them. The fetcher now honours the charset declared in
+the `Content-Type` header or the document's own `<meta charset>` and falls back to UTF-8.
+
+Pre-existing bug, not caused by the currency change; it only became visible because we started
+looking at Ukrainian sites. Affected competitors need a re-scan to pick up readable text.
+
+Not covered: no encoding *sniffing* — a page that declares nothing and is not UTF-8 is still read as
+UTF-8.
+
+---
+
 ## 2026-09-09 — Hryvnia (and other currencies) recognised in prices
 
 **Live:** pending deploy

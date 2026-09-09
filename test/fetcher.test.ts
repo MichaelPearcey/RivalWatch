@@ -84,4 +84,17 @@ describe("PoliteFetcher", () => {
     expect(sleeps.length).toBeGreaterThanOrEqual(2);
     expect(Math.max(...sleeps)).toBeLessThanOrEqual(500);
   });
+
+  it("decodes legacy encodings declared by the page", async () => {
+    // "44.20 грн" in windows-1251, as much of the Ukrainian web still serves it.
+    const bytes = Buffer.from([0x34, 0x34, 0x2e, 0x32, 0x30, 0x20, 0xe3, 0xf0, 0xed]);
+    const html = Buffer.concat([Buffer.from(`<meta charset="windows-1251"><p>`, "latin1"), bytes]);
+    const f = (async (url: string | URL | Request) =>
+      String(url).endsWith("robots.txt")
+        ? new Response("", { status: 404 })
+        : new Response(html, { headers: { "content-type": "text/html" } })) as unknown as typeof fetch;
+    const r = await new PoliteFetcher({ ...opts, fetchImpl: f }).get("https://f.example/");
+    expect(r.kind).toBe("ok");
+    expect(r.kind === "ok" && r.response.body).toContain("44.20 грн");
+  });
 });

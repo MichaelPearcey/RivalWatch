@@ -114,7 +114,7 @@ export class PoliteFetcher {
         },
       });
       const contentType = res.headers.get("content-type");
-      const body = await readBounded(res, this.maxBodyBytes);
+      const body = await readBounded(res, this.maxBodyBytes, contentType);
       return { status: res.status, contentType, body, finalUrl: res.url || url };
     } finally {
       clearTimeout(timer);
@@ -122,7 +122,7 @@ export class PoliteFetcher {
   }
 }
 
-async function readBounded(res: Response, maxBytes: number): Promise<string> {
+async function readBounded(res: Response, maxBytes: number, contentType?: string | null): Promise<string> {
   if (!res.body) return "";
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -139,5 +139,28 @@ async function readBounded(res: Response, maxBytes: number): Promise<string> {
       }
     }
   }
-  return new TextDecoder("utf-8", { fatal: false }).decode(Buffer.concat(chunks));
+  return decodeBody(Buffer.concat(chunks), contentType);
+}
+
+const CHARSET_RE = /charset\s*=\s*["']?([\w-]+)/i;
+
+/**
+ * Sites outside the anglosphere still serve legacy single-byte encodings
+ * (windows-1251 across the Ukrainian and Russian web), so honour the declared
+ * charset from the header or the document's own meta tag before falling back
+ * to UTF-8.
+ */
+function decodeBody(buf: Buffer, contentType?: string | null): string {
+  const declared =
+    CHARSET_RE.exec(contentType ?? "")?.[1] ??
+    CHARSET_RE.exec(buf.subarray(0, 4096).toString("latin1"))?.[1];
+  const charset = declared?.toLowerCase();
+  if (charset && charset !== "utf-8" && charset !== "utf8") {
+    try {
+      return new TextDecoder(charset, { fatal: false }).decode(buf);
+    } catch {
+      // Unknown label: fall through to UTF-8 rather than losing the page.
+    }
+  }
+  return new TextDecoder("utf-8", { fatal: false }).decode(buf);
 }
