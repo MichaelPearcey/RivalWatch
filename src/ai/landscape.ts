@@ -113,7 +113,7 @@ export async function generateLandscape(
 ): Promise<LandscapeDoc> {
   const fallback = heuristicLandscape(business, competitors, opts.t);
   if (competitors.length === 0) return fallback;
-  const result = await llm.complete("competitor_landscape", SYSTEM, buildLandscapePrompt(business, competitors, opts.language), LandscapeSchema, { maxTokens: 1600, accountId: opts.accountId ?? null });
+  const result = await llm.complete("competitor_landscape", SYSTEM, buildLandscapePrompt(business, competitors, opts.language), LandscapeSchema, { maxTokens: 4000, accountId: opts.accountId ?? null });
   if (!result) return fallback;
   return { ...result.data, provider: `anthropic:${result.model}` };
 }

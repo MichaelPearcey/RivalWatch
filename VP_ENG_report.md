@@ -11,6 +11,22 @@ Conventions:
 
 ---
 
+## 2026-09-09 — Root cause of the missing AI text: Ukrainian ran out of room
+
+**Live:** pending deploy
+
+The retry added earlier made the real cause visible: `stop_reason: max_tokens`. Cyrillic costs two
+to three times as many tokens per character as English, so the length limits — set while the product
+was English-only — cut Ukrainian profiles and briefings off mid-sentence, the JSON never closed, and
+the page silently fell back to the no-AI version. Profiles now get 2200 tokens (was 900), the
+landscape 4000 (was 1600), and a retry after a truncated reply doubles the budget again and asks for
+shorter fields.
+
+Not covered: this costs more per briefing (still inside the daily spend cap), and it has not yet
+been observed producing a full Ukrainian briefing end to end — that is the next thing to check.
+
+---
+
 ## 2026-09-09 — A malformed AI reply no longer costs the whole briefing
 
 **Live:** pending deploy

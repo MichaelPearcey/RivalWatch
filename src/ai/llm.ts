@@ -60,11 +60,14 @@ export class JsonLlm {
     attempt: number,
   ): Promise<{ data: T; model: string; costUsd: number } | null | "retry"> {
     if (!this.client) return null;
-    const content = attempt === 0 ? user : `${user}\n\nYour previous reply was not valid JSON. Reply with the JSON object only.`;
+    const content = attempt === 0 ? user : `${user}\n\nYour previous reply was not valid JSON, or ran out of room. Reply with the JSON object only, and keep every field short.`;
+    // Non-Latin scripts cost two to three times as many tokens per character, so
+    // the retry also doubles the budget: truncation is the usual cause.
+    const maxTokens = (opts.maxTokens ?? 1200) * (attempt === 0 ? 1 : 2);
     try {
       const res = await this.client.create({
         model: this.cfg.ANTHROPIC_MODEL,
-        max_tokens: opts.maxTokens ?? 1200,
+        max_tokens: maxTokens,
         temperature: 0.2,
         system,
         // Prefilling the opening brace stops the model prefacing the JSON with prose.

@@ -60,7 +60,7 @@ export function heuristicProfile(name: string, sources: ProfileSource[], t: Tran
 export async function generateProfile(llm: JsonLlm, name: string, website: string, sources: ProfileSource[], opts: { language?: string; accountId?: number | null; t?: Translate } = {}): Promise<CompetitorProfile> {
   const fallback = heuristicProfile(name, sources, opts.t);
   if (sources.length === 0) return fallback;
-  const result = await llm.complete("competitor_profile", SYSTEM, buildProfilePrompt(name, website, sources, opts.language), ProfileSchema, { maxTokens: 900, accountId: opts.accountId ?? null });
+  const result = await llm.complete("competitor_profile", SYSTEM, buildProfilePrompt(name, website, sources, opts.language), ProfileSchema, { maxTokens: 2200, accountId: opts.accountId ?? null });
   if (!result) return fallback;
   return { ...result.data, sources: sources.map((s) => s.url), provider: `anthropic:${result.model}` };
 }
