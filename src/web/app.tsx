@@ -318,6 +318,7 @@ export function createWebApp(app: App) {
     A.getBusiness(app, p, id(c));
     return c.json(repo.bigNews(p.accountId, id(c), { since: new Date(Date.now() - 30 * 86_400_000).toISOString() }));
   });
+  api.post("/competitors/:id/pricing", async (c) => c.json(A.setCompetitorPricing(app, P(c), id(c), A.CompetitorPricingInput.parse(await c.req.json()))));
   api.post("/competitors/:id/profile", async (c) => {
     const profile = await A.profileCompetitor(app, P(c), id(c));
     return profile ? c.json(profile) : c.json({ error: "profile generation failed" }, 502);
@@ -620,6 +621,13 @@ export function createWebApp(app: App) {
     const competitor = A.getCompetitor(app, P(c), id(c));
     return tryUi(c, `/b/${competitor.business_id}`, async () => {
       await A.profileCompetitor(app, P(c), competitor.id);
+    });
+  });
+  ui.post("/competitors/:id/pricing", async (c) => {
+    const competitor = A.getCompetitor(app, P(c), id(c));
+    return tryUi(c, `/b/${competitor.business_id}`, async () => {
+      A.setCompetitorPricing(app, P(c), competitor.id, A.CompetitorPricingInput.parse(await bodyOf(c)));
+      return T(c)("cprice.saved");
     });
   });
   ui.post("/competitors/:id/delete", (c) => {

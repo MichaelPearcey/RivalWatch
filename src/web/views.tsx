@@ -927,6 +927,7 @@ export const BusinessPage: FC<{
             </form>
           </div>
           <ProfileCard t={t} competitor={competitor} />
+          <ManualPricingCard t={t} competitor={competitor} />
           <details class="card flat" style="margin:.75rem 0 0" open={news.some((n) => (n.magnitude ?? 0) >= 4 && n.about_competitor === 1)}>
             <summary>
               <strong class="small">
@@ -1146,6 +1147,28 @@ const ProfileCard: FC<{ t: Translate; competitor: Competitor }> = ({ t, competit
     </details>
   );
 };
+
+/**
+ * Prices we cannot read ourselves: Instagram-only competitors, price lists posted
+ * as images, prices given over the phone. Typed in once, they feed the profile and
+ * the landscape briefing like any other fact.
+ */
+const ManualPricingCard: FC<{ t: Translate; competitor: Competitor }> = ({ t, competitor }) => (
+  <details class="card flat" style="margin:.75rem 0 0" open={!!competitor.pricing_notes}>
+    <summary>
+      <strong class="small">{t("cprice.h")}</strong> {competitor.pricing_notes ? null : <span class="muted small">{t("cprice.empty")}</span>}
+    </summary>
+    <p class="muted tiny" style="margin:.4rem 0">
+      {t("cprice.hint")}
+    </p>
+    <form method="post" action={`/competitors/${competitor.id}/pricing`}>
+      <textarea name="pricing_notes" rows={4} placeholder={t("cprice.ph")}>{competitor.pricing_notes ?? ""}</textarea>
+      <button class="tiny secondary" type="submit" style="margin-top:.4rem">
+        {t("cprice.save")}
+      </button>
+    </form>
+  </details>
+);
 
 const VERDICTS = ["useful", "not_useful", "incorrect", "too_noisy"] as const;
 
