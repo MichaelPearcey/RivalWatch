@@ -42,20 +42,47 @@ export class JsonLlm {
       return null;
     }
     const started = Date.now();
+    // One retry: a malformed reply is usually a one-off, and the alternative is
+    // the heuristic fallback for the whole briefing.
+    for (let attempt = 0; ; attempt++) {
+      const result = await this.attempt(purpose, system, user, schema, opts, started, attempt);
+      if (result !== "retry") return result;
+    }
+  }
+
+  private async attempt<T>(
+    purpose: string,
+    system: string,
+    user: string,
+    schema: z.ZodType<T>,
+    opts: { maxTokens?: number; accountId?: number | null },
+    started: number,
+    attempt: number,
+  ): Promise<{ data: T; model: string; costUsd: number } | null | "retry"> {
+    if (!this.client) return null;
+    const content = attempt === 0 ? user : `${user}\n\nYour previous reply was not valid JSON. Reply with the JSON object only.`;
     try {
-      const res = await this.client.create({ model: this.cfg.ANTHROPIC_MODEL, max_tokens: opts.maxTokens ?? 1200, temperature: 0.2, system, messages: [{ role: "user", content: user }] });
-      const text = res.content.map((c) => ("text" in c ? c.text : "")).join("");
+      const res = await this.client.create({
+        model: this.cfg.ANTHROPIC_MODEL,
+        max_tokens: opts.maxTokens ?? 1200,
+        temperature: 0.2,
+        system,
+        // Prefilling the opening brace stops the model prefacing the JSON with prose.
+        messages: [{ role: "user", content }, { role: "assistant", content: "{" }],
+      });
+      const raw = res.content.map((c) => ("text" in c ? c.text : "")).join("");
+      const text = raw.trimStart().startsWith("{") ? raw : `{${raw}`;
       const start = text.indexOf("{");
       const end = text.lastIndexOf("}");
-      if (start === -1 || end < start) throw new Error("no JSON object in response");
+      if (start === -1 || end < start) throw new Error(`no JSON object in response (stop_reason: ${res.stop_reason})`);
       const data = schema.parse(JSON.parse(text.slice(start, end + 1)));
       const costUsd = (res.usage.input_tokens * this.cfg.AI_INPUT_COST_PER_MTOK + res.usage.output_tokens * this.cfg.AI_OUTPUT_COST_PER_MTOK) / 1_000_000;
       this.events.record({ type: "ai.call", accountId: opts.accountId ?? null, estimatedCostUsd: costUsd, payload: { purpose, provider: "anthropic", model: res.model, input_tokens: res.usage.input_tokens, output_tokens: res.usage.output_tokens, duration_ms: Date.now() - started } });
       return { data, model: res.model, costUsd };
     } catch (err) {
-      this.events.record({ type: "ai.failed", result: "failed", accountId: opts.accountId ?? null, payload: { purpose, provider: "anthropic", ...errorFields(err) } });
-      log.warn("llm completion failed", { purpose, ...errorFields(err) });
-      return null;
+      this.events.record({ type: "ai.failed", result: "failed", accountId: opts.accountId ?? null, payload: { purpose, provider: "anthropic", attempt, ...errorFields(err) } });
+      log.warn("llm completion failed", { purpose, attempt, ...errorFields(err) });
+      return attempt === 0 ? "retry" : null;
     }
   }
 }

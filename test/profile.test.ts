@@ -71,6 +71,26 @@ describe("competitor profiles", () => {
     const comp = (await json<{ profile_status: string; profile: { provider: string } }>(t.web, `/api/competitors/${r.body.competitor.id}`, { session: s })).body;
     expect(comp.profile_status).toBe("ready");
     expect(comp.profile.provider).toBe("heuristic");
-    expect(t.app.events.list({ type: "ai.failed" })).toHaveLength(1);
+    expect(t.app.events.list({ type: "ai.failed" })).toHaveLength(2);
+  });
+
+  it("retries once when the model's first reply is malformed", async () => {
+    const good = JSON.stringify({ summary: "Acme sells design tools.", target_customers: "Freelancers", usps: ["Fast"], products: ["Acme Design"], pricing_summary: "£19/month", positioning: "Simple" });
+    let calls = 0;
+    const llm = {
+      create: (async () => {
+        calls++;
+        return { model: "claude-test", content: [{ type: "text", text: calls === 1 ? '{"summary": "broken' : good }], usage: { input_tokens: 10, output_tokens: 10 } };
+      }) as never,
+    } as MessagesClient;
+    t = testApp({ AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-test" }, { llmClient: llm, analyzer: { name: "fake", analyze: async () => { throw new Error("unused"); } } });
+    const s = await login(t.web, "r@a.co");
+    const b = (await json<{ id: number }>(t.web, "/api/businesses", { method: "POST", session: s, body: JSON.stringify({ name: "B" }) })).body;
+    const r = await json<{ competitor: { id: number } }>(t.web, `/api/businesses/${b.id}/competitors`, { method: "POST", session: s, body: JSON.stringify({ name: "Acme", website: `${t.base}/demo/` }) });
+    await t.app.idle();
+    const comp = (await json<{ profile: { provider: string; summary: string } }>(t.web, `/api/competitors/${r.body.competitor.id}`, { session: s })).body;
+    expect(comp.profile.provider).toContain("anthropic");
+    expect(comp.profile.summary).toBe("Acme sells design tools.");
+    expect(calls).toBe(2);
   });
 });

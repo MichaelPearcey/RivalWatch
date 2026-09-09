@@ -11,6 +11,22 @@ Conventions:
 
 ---
 
+## 2026-09-09 — A malformed AI reply no longer costs the whole briefing
+
+**Live:** pending deploy
+
+QA showed two competitor profiles and one landscape silently falling back to the no-AI version:
+the events say the model's reply was not valid JSON (once prose instead of JSON, once a broken
+array), and we gave up on the first failure. Now the reply is prefilled with the opening brace so
+the model cannot preface it with chat, and one retry is made with an explicit "JSON only" reminder
+before falling back. The failure event records the attempt number and the stop reason, so the next
+occurrence is diagnosable.
+
+Not covered: cost — a retry is a second model call, still inside the existing daily call and spend
+caps. Genuinely bad replies twice in a row still fall back to the no-AI version, by design.
+
+---
+
 ## 2026-09-09 — AI told not to mix currencies, and to write proper Ukrainian
 
 **Live:** pending deploy
