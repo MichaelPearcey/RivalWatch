@@ -11,6 +11,38 @@ Conventions:
 
 ---
 
+## 2026-09-17 — Owner-entered competitor prices are live; Michael's Instagram checklist
+
+**Live:** https://rivalwatch-production-8a8f.up.railway.app — deployed from `production` after PR #20.
+
+Every competitor card now has a "prices you entered yourself" box. Maria types the price list in,
+it is stored per competitor (`competitors.pricing_notes`, migration 011) and is preferred over
+anything we inferred when building the AI profile and the competitor landscape — so it survives a
+competitor we cannot fetch at all, which is the whole Instagram case. Clearing the box stores NULL;
+the event payload records only `{ cleared, chars }`, never the text.
+
+**Michael — four steps, no spend, unblocks Instagram monitoring (Phase 1 in `docs/08-instagram-source.md`):**
+
+1. Switch the company Instagram account to **Professional (Business or Creator)**.
+2. Link it to a **Facebook Page** you own.
+3. Create an app at developers.facebook.com and generate a **long-lived access token** with
+   `instagram_basic`, `instagram_manage_insights`, `pages_read_engagement`.
+4. Put the token in Railway as `META_IG_TOKEN` and the account id as `META_IG_USER_ID`
+   (`scripts/railway-set-secret.ps1 -Name META_IG_TOKEN -FromFile <path outside repo>`).
+
+No App Review is needed while the app serves only a business we own; App Review (weeks) comes when
+customers monitor their own competitors. Build after the token exists is roughly one session.
+
+Two limits to know before promising anything to a customer: the *competitor* must also be a
+Business/Creator account, and we only get caption text — prices printed inside an image (OLIKA's
+"200 грн" poster) need OCR, which is a separate feature.
+
+Not covered: nothing has been called against Meta; token rate limits and whether Maria's two
+studios are professional accounts are unverified. The manual price box was verified by tests and
+the deploy was verified only as far as the site responding 200.
+
+---
+
 ## 2026-09-09 — Instagram-only competitors: what it would take (docs only, no code)
 
 **Live:** n/a — documentation.
