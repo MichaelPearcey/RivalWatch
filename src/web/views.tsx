@@ -1,5 +1,6 @@
 import type { FC } from "hono/jsx";
 import { raw } from "hono/html";
+import { OWNER_PRICES_URL } from "../ai/profile.js";
 import type { AgentNote, AgentRunRow, AgentStateRow } from "../agents/types.js";
 import type { Approval } from "../approvals.js";
 import type { Principal } from "../auth.js";
@@ -1126,7 +1127,8 @@ const ProfileCard: FC<{ t: Translate; competitor: Competitor }> = ({ t, competit
             </div>
           ) : null}
           <div class="row tiny muted" style="margin-top:.6rem">
-            <span>{t.plural("profile.sources", profile.sources.length)}</span>
+            <span>{t.plural("profile.sources", profile.sources.filter((u) => u !== OWNER_PRICES_URL).length)}</span>
+            {profile.sources.includes(OWNER_PRICES_URL) ? <span>· {t("profile.ownerprices")}</span> : null}
             {profile.provider === "heuristic" ? <span>· {t("profile.heuristic")}</span> : null}
             <form method="post" action={`/competitors/${competitor.id}/profile`} class="ml">
               <button class="tiny secondary" type="submit">

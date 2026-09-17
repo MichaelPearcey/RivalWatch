@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { App } from "../app.js";
 import type { Principal } from "../auth.js";
 import { generateLandscape, type LandscapeInput } from "../ai/landscape.js";
-import { generateProfile, type ProfileSource } from "../ai/profile.js";
+import { generateProfile, OWNER_PRICES_KIND, OWNER_PRICES_URL, type ProfileSource } from "../ai/profile.js";
 import {
   FEEDBACK_VERDICTS,
   PAGE_KINDS,
@@ -239,7 +239,7 @@ export async function profileCompetitor(app: App, p: Principal, competitorId: nu
     }
     // Prices the owner typed in are facts we cannot read ourselves (Instagram-only
     // competitors, price lists published as images); feed them to the profiler as a source.
-    if (competitor.pricing_notes) sources.push({ url: competitor.website, kind: "owner_supplied_prices", title: null, text: competitor.pricing_notes });
+    if (competitor.pricing_notes) sources.push({ url: OWNER_PRICES_URL, kind: OWNER_PRICES_KIND, title: null, text: competitor.pricing_notes });
     if (sources.length === 0) {
       const outcome = await app.sources.get("website")?.fetch({ ...pages[0]!, url: competitor.website, kind: "home" } as MonitoredPage);
       if (outcome?.ok) sources.push({ url: competitor.website, kind: "home", title: outcome.title, text: outcome.text });

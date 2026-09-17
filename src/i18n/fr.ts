@@ -140,6 +140,7 @@ export const fr: Record<keyof typeof en, string> = {
   "profile.unknown": "Non déterminé automatiquement.",
   "profile.prices": "Prix mentionnés : {list}",
   "profile.noprices": "Non publié sur les pages que nous avons lues.",
+  "profile.ownerprices": "plus les prix que vous avez saisis vous-même",
   "profile.heuristic": "Résumé automatique sans IA — activez l'analyse IA pour un profil plus riche.",
   "cprice.h": "Prix que vous avez saisis vous-même",
   "cprice.empty": "non renseigné",
