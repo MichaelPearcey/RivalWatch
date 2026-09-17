@@ -11,6 +11,39 @@ Conventions:
 
 ---
 
+## 2026-09-17 — Headless browser for JavaScript-only sites: what it costs, and the one decision needed
+
+**Live:** no. Code is on PR #23; `RENDER_ENABLED` is `false` and nothing changes until you say so.
+
+Two of Maria's competitors in a row could not be read at all. The second, `instasport.ua`
+(Viter Dance Studio), is not robots-blocked — it is a single-page app that ships an empty shell,
+so our fetcher saw the title and zero words. With a headless Chromium fallback the same page yields
+542 words and the prices 200 ₴ / 350 ₴ / 1700 ₴. The browser is only reached when a plain fetch
+found no text, never for a robots-disallowed URL, and it now shuts itself down after two minutes
+idle (`RENDER_IDLE_MS`) so it holds no memory between scans.
+
+**Measured, not guessed** (real render of that page on this machine):
+
+- ~4.6 s per render, peak ~0.3–1.0 GB RSS across the Chromium processes while it runs.
+- At Railway's ~$10 per GB-month, a render costs ≈ $0.00002. 100 renders a day ≈ **$0.06/month**.
+  Rendering is not a metered API; there is no per-page fee.
+
+**The real constraint is the ceiling, not the bill.** `railway metrics` for RivalWatch: memory
+limit **1024 MB**, current 52 MB, avg 51 MB, peak 66 MB; CPU limit 2 vCPU, avg < 0.01. A render can
+approach that 1 GB ceiling and get the service OOM-restarted mid-scan. So enabling this needs the
+service memory limit raised (Hobby is $5/month and includes $5 of usage, which today's footprint
+does not come close to spending).
+
+**Decision for you (CTO):** raise the service memory limit / confirm the plan, then say the word and
+I merge #23 and set `RENDER_ENABLED=true`. Cost exposure is realistically $0–5 a month.
+
+Not covered: the Alpine image installs Chromium and sets `RENDER_BROWSER_PATH=/usr/bin/chromium-browser`;
+that path is unverified inside the built container, and the image is larger even while rendering is off.
+Memory was measured on this VM with a desktop Chrome build, not the Alpine one, and RSS across
+processes over-counts shared pages — treat 1 GB as the pessimistic end.
+
+---
+
 ## 2026-09-09 — Instagram-only competitors: what it would take (docs only, no code)
 
 **Live:** n/a — documentation.

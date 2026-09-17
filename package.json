@@ -26,6 +26,7 @@
     "cheerio": "^1.2.0",
     "diff": "^9.0.0",
     "hono": "^4.13.7",
+    "playwright-core": "1.63.0",
     "robots-parser": "^3.0.1",
     "zod": "^4.5.4"
   },
