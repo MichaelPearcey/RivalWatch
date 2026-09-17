@@ -46,6 +46,13 @@ const ConfigSchema = z.object({
   FETCH_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   FETCH_MIN_HOST_DELAY_MS: z.coerce.number().int().nonnegative().default(2_000),
 
+  /** Headless-browser fallback for pages that ship an empty shell plus JavaScript. Costs memory; off by default. */
+  RENDER_ENABLED: bool(false),
+  RENDER_TIMEOUT_MS: z.coerce.number().int().positive().default(25_000),
+  RENDER_SETTLE_MS: z.coerce.number().int().nonnegative().default(750),
+  /** Chromium binary; the container installs one and sets this. */
+  RENDER_BROWSER_PATH: z.string().optional(),
+
   /** Minutes to wait before re-fetching to confirm a detected change. 0 = confirm on the very next fetch. */
   CONFIRM_DELAY_MINUTES: z.coerce.number().int().nonnegative().default(60),
 

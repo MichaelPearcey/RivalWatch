@@ -24,6 +24,7 @@ import { SourceRegistry } from "./sources/types.js";
 import { purgeDeletedAccounts } from "./web/actions.js";
 import { PoliteFetcher } from "./sources/website/fetcher.js";
 import { WebsiteSource } from "./sources/website/index.js";
+import { ChromiumRenderer, type PageRenderer } from "./sources/website/render.js";
 
 /** Everything the HTTP layer, CLI and tests need, wired once. */
 export interface App {
@@ -66,6 +67,8 @@ export interface AppOverrides {
   founderClient?: MessagesClient;
   /** Fake GitHub client in tests. */
   github?: GitHub;
+  /** Fake headless browser in tests. */
+  renderer?: PageRenderer;
 }
 
 export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
@@ -80,7 +83,17 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
     minHostDelayMs: cfg.FETCH_MIN_HOST_DELAY_MS,
     ...(overrides.fetchImpl ? { fetchImpl: overrides.fetchImpl } : {}),
   });
-  const sources = new SourceRegistry().register(new WebsiteSource(fetcher));
+  const renderer =
+    overrides.renderer ??
+    (cfg.RENDER_ENABLED
+      ? new ChromiumRenderer({
+          userAgent: cfg.FETCH_USER_AGENT,
+          timeoutMs: cfg.RENDER_TIMEOUT_MS,
+          settleMs: cfg.RENDER_SETTLE_MS,
+          executablePath: cfg.RENDER_BROWSER_PATH,
+        })
+      : undefined);
+  const sources = new SourceRegistry().register(new WebsiteSource(fetcher, renderer));
 
   const analyzer = overrides.analyzer ?? createAnalyzer(cfg, events);
   const pipeline = new Pipeline(repo, events, sources, analyzer, { confirmDelayMinutes: cfg.CONFIRM_DELAY_MINUTES, ...overrides.pipeline });
@@ -123,6 +136,7 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
     },
     close() {
       scheduler.stop();
+      void renderer?.close();
       db.close();
     },
   };
