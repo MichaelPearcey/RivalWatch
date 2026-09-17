@@ -1,11 +1,15 @@
 import type { MonitoredPage } from "../../db/repo.js";
 import type { FetchOutcome, Source } from "../types.js";
-import { extractFromHtml } from "./extract.js";
+import { extractFromHtml, type Extracted } from "./extract.js";
 import type { PoliteFetcher } from "./fetcher.js";
+import type { PageRenderer } from "./render.js";
 
 export class WebsiteSource implements Source {
   readonly type = "website";
-  constructor(private readonly fetcher: PoliteFetcher) {}
+  constructor(
+    private readonly fetcher: PoliteFetcher,
+    private readonly renderer?: PageRenderer,
+  ) {}
 
   async fetch(page: MonitoredPage): Promise<FetchOutcome> {
     let result: Awaited<ReturnType<PoliteFetcher["get"]>>;
@@ -25,8 +29,27 @@ export class WebsiteSource implements Source {
       return { ok: false, reason: "content_unreadable", status, message: `unsupported content-type ${contentType}` };
     }
 
-    const extracted = extractFromHtml(body);
-    if (extracted.meta.thin || extracted.meta.wordCount < 5) {
+    let extracted = extractFromHtml(body);
+    let html = body;
+    let url = finalUrl;
+    let rendered = false;
+
+    // Single-page apps serve an empty shell; robots already allowed this URL, so
+    // reading it the way a visitor's browser would is the same permission.
+    if (needsBrowser(extracted) && this.renderer) {
+      const render = await this.renderer.render(page.url);
+      if (render) {
+        const fromBrowser = extractFromHtml(render.html);
+        if (fromBrowser.meta.wordCount > extracted.meta.wordCount) {
+          extracted = fromBrowser;
+          html = render.html;
+          url = render.finalUrl;
+          rendered = true;
+        }
+      }
+    }
+
+    if (needsBrowser(extracted)) {
       return { ok: false, reason: "content_unreadable", status, message: extracted.meta.thin ? "page appears to be rendered by JavaScript; no readable text" : "no readable text" };
     }
     return {
@@ -35,8 +58,12 @@ export class WebsiteSource implements Source {
       contentType,
       title: extracted.title,
       text: extracted.text,
-      raw: body,
-      meta: { ...extracted.meta, finalUrl },
+      raw: html,
+      meta: { ...extracted.meta, finalUrl: url, rendered },
     };
   }
+}
+
+function needsBrowser(extracted: Extracted): boolean {
+  return extracted.meta.thin || extracted.meta.wordCount < 5;
 }

@@ -11,6 +11,39 @@ Conventions:
 
 ---
 
+## 2026-09-17 — Headless browser for JavaScript-only sites (live), and what it costs
+
+**Live:** yes — PR #23 merged, deployed, `RENDER_ENABLED=true` after Michael raised the service
+memory ceiling from 1 GB to 8 GB (CPU limit now 8 vCPU).
+
+Two of Maria's competitors in a row could not be read at all. The second, `instasport.ua`
+(Viter Dance Studio), is not robots-blocked — it is a single-page app that ships an empty shell,
+so our fetcher saw the title and zero words. With a headless Chromium fallback the same page yields
+542 words and the prices 200 ₴ / 350 ₴ / 1700 ₴. The browser is only reached when a plain fetch
+found no text, never for a robots-disallowed URL, and it now shuts itself down after two minutes
+idle (`RENDER_IDLE_MS`) so it holds no memory between scans.
+
+**Measured, not guessed** (real render of that page on this machine):
+
+- ~4.6 s per render, peak ~0.3–1.0 GB RSS across the Chromium processes while it runs.
+- At Railway's ~$10 per GB-month, a render costs ≈ $0.00002. 100 renders a day ≈ **$0.06/month**.
+  Rendering is not a metered API; there is no per-page fee.
+
+**The constraint was the ceiling, not the bill.** Before the change the service was capped at
+1024 MB while using 52 MB, so a render could have hit the cap and got the service OOM-restarted
+mid-scan. The cap is now 8 GB, so that risk is gone; the bill still moves by cents.
+
+The production image was verified directly, not assumed: `docker build` of this Dockerfile gives
+`Chromium 152.0.7977.82 Alpine Linux` at `/usr/bin/chromium-browser`, and `playwright-core` driving
+that binary inside the container rendered the Viter page to 154 KB of HTML containing the prices.
+
+Not covered: no competitor page has been re-scanned through the live scheduler yet, so the first
+real proof will be Maria pressing "check now" on the Viter page. The image is larger for everyone,
+including deploys that never render. Memory figures come from this VM's desktop Chrome and
+over-count shared pages across processes — treat 1 GB as the pessimistic end.
+
+---
+
 ## 2026-09-17 — Owner-entered competitor prices are live; Michael's Instagram checklist
 
 **Live:** https://rivalwatch-production-8a8f.up.railway.app — deployed from `production` after PR #20.
