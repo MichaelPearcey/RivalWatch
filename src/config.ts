@@ -50,6 +50,8 @@ const ConfigSchema = z.object({
   RENDER_ENABLED: bool(false),
   RENDER_TIMEOUT_MS: z.coerce.number().int().positive().default(25_000),
   RENDER_SETTLE_MS: z.coerce.number().int().nonnegative().default(750),
+  /** Close the browser after this long without a render; 0 keeps it running. */
+  RENDER_IDLE_MS: z.coerce.number().int().nonnegative().default(120_000),
   /** Chromium binary; the container installs one and sets this. */
   RENDER_BROWSER_PATH: z.string().optional(),
 

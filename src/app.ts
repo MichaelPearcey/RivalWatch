@@ -90,6 +90,7 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
           userAgent: cfg.FETCH_USER_AGENT,
           timeoutMs: cfg.RENDER_TIMEOUT_MS,
           settleMs: cfg.RENDER_SETTLE_MS,
+          idleMs: cfg.RENDER_IDLE_MS,
           executablePath: cfg.RENDER_BROWSER_PATH,
         })
       : undefined);
