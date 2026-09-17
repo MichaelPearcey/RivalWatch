@@ -140,6 +140,7 @@ export const ru: Record<keyof typeof en, string> = {
   "profile.unknown": "Не удалось определить автоматически.",
   "profile.prices": "Найденные цены: {list}",
   "profile.noprices": "Не указаны на страницах, которые мы прочитали.",
+  "profile.ownerprices": "плюс цены, которые вы внесли сами",
   "profile.heuristic": "Автоматическая сводка без ИИ — включите ИИ-анализ для более полного профиля.",
   "cprice.h": "Цены, которые вы внесли сами",
   "cprice.empty": "не заполнено",
