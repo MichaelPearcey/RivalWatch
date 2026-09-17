@@ -58,6 +58,9 @@ export const CompetitorInput = z.object({
   discover: z.boolean().default(true),
 });
 
+// Empty form fields never reach us (see bodyOf), so an absent field means "clear it".
+export const CompetitorPricingInput = z.object({ pricing_notes: z.string().trim().max(4000).default("") });
+
 export const PageInput = z.object({
   url,
   kind: z.enum(PAGE_KINDS).default("other"),
@@ -234,6 +237,9 @@ export async function profileCompetitor(app: App, p: Principal, competitorId: nu
         if (outcome?.ok) sources.push({ url: pg.url, kind: pg.kind, title: outcome.title, text: outcome.text });
       }
     }
+    // Prices the owner typed in are facts we cannot read ourselves (Instagram-only
+    // competitors, price lists published as images); feed them to the profiler as a source.
+    if (competitor.pricing_notes) sources.push({ url: competitor.website, kind: "owner_supplied_prices", title: null, text: competitor.pricing_notes });
     if (sources.length === 0) {
       const outcome = await app.sources.get("website")?.fetch({ ...pages[0]!, url: competitor.website, kind: "home" } as MonitoredPage);
       if (outcome?.ok) sources.push({ url: competitor.website, kind: "home", title: outcome.title, text: outcome.text });
@@ -248,6 +254,21 @@ export async function profileCompetitor(app: App, p: Principal, competitorId: nu
     app.events.record({ type: "competitor.profiled", actor: "system", accountId: p.accountId, entity: { type: "competitor", id: competitorId }, result: "failed", payload: errorFields(err) });
     return null;
   }
+}
+
+/** Owner-entered prices, for competitors whose prices we cannot read (Instagram, images, offline). */
+export function setCompetitorPricing(app: App, p: Principal, competitorId: number, input: z.infer<typeof CompetitorPricingInput>): Competitor {
+  getCompetitor(app, p, competitorId);
+  const notes = input.pricing_notes.length ? input.pricing_notes : null;
+  const competitor = app.repo.setCompetitorPricingNotes(p.accountId, competitorId, notes) ?? notFound("competitor");
+  app.events.record({
+    type: "competitor.pricing_noted",
+    actor: p.actor,
+    accountId: p.accountId,
+    entity: { type: "competitor", id: competitorId },
+    payload: { cleared: notes === null, chars: notes?.length ?? 0 },
+  });
+  return competitor;
 }
 
 export function getCompetitor(app: App, p: Principal, id: number): Competitor {
@@ -373,7 +394,8 @@ export async function generateLandscapeDoc(app: App, p: Principal, businessId: n
         name: c.name,
         website: c.website,
         positioning: profile?.positioning ?? "",
-        pricing: profile?.pricing_summary ?? "",
+        // Owner-entered prices beat anything we inferred: they read them with their own eyes.
+        pricing: c.pricing_notes ?? profile?.pricing_summary ?? "",
         target_customers: profile?.target_customers ?? "",
         usps: profile?.usps ?? [],
         products: profile?.products ?? [],

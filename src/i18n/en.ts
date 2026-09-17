@@ -149,6 +149,12 @@ export const en = {
   "profile.prices": "Prices mentioned: {list}",
   "profile.noprices": "Not published on the pages we read.",
   "profile.heuristic": "Automatic summary without AI — enable AI analysis for a richer profile.",
+  "cprice.h": "Prices you entered yourself",
+  "cprice.empty": "not filled in",
+  "cprice.hint": "For competitors whose prices we cannot read: Instagram-only pages, price lists posted as images, prices given over the phone. What you type here is used in the profile and the competitor landscape.",
+  "cprice.ph": "Trial class: 300 UAH\nSingle class: 400 UAH\n8-class pass: 1900 UAH",
+  "cprice.save": "Save prices",
+  "cprice.saved": "Prices saved.",
   "profile.refresh": "Refresh profile",
   "profile.autoadded": "Added automatically",
 
