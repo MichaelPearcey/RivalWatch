@@ -34,13 +34,22 @@ describe("news parsing and heuristic classification", () => {
   });
 });
 
+/**
+ * Alerts and the digest only look back seven days, so the feed the monitor is
+ * served has to move with the clock; the parsing tests above keep the fixed dates.
+ */
+const recentRss = (): string => {
+  let daysAgo = 2;
+  return RSS.replace(/<pubDate>[^<]*<\/pubDate>/g, () => `<pubDate>${new Date(Date.now() - daysAgo++ * 86_400_000).toUTCString()}</pubDate>`);
+};
+
 describe("news monitor", () => {
   let t: ReturnType<typeof testApp>;
   beforeEach(() => {
     externalHosts["news.google.com"] = (url) => {
       expect(url.pathname).toBe("/rss/search");
       expect(url.searchParams.get("q")).toBe('"Acme Studio"');
-      return new Response(RSS, { status: 200, headers: { "content-type": "application/rss+xml" } });
+      return new Response(recentRss(), { status: 200, headers: { "content-type": "application/rss+xml" } });
     };
   });
   afterEach(() => {
