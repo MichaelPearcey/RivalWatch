@@ -11,9 +11,10 @@ Conventions:
 
 ---
 
-## 2026-09-17 — Headless browser for JavaScript-only sites: what it costs, and the one decision needed
+## 2026-09-17 — Headless browser for JavaScript-only sites (live), and what it costs
 
-**Live:** no. Code is on PR #23; `RENDER_ENABLED` is `false` and nothing changes until you say so.
+**Live:** yes — PR #23 merged, deployed, `RENDER_ENABLED=true` after Michael raised the service
+memory ceiling from 1 GB to 8 GB (CPU limit now 8 vCPU).
 
 Two of Maria's competitors in a row could not be read at all. The second, `instasport.ua`
 (Viter Dance Studio), is not robots-blocked — it is a single-page app that ships an empty shell,
@@ -28,19 +29,50 @@ idle (`RENDER_IDLE_MS`) so it holds no memory between scans.
 - At Railway's ~$10 per GB-month, a render costs ≈ $0.00002. 100 renders a day ≈ **$0.06/month**.
   Rendering is not a metered API; there is no per-page fee.
 
-**The real constraint is the ceiling, not the bill.** `railway metrics` for RivalWatch: memory
-limit **1024 MB**, current 52 MB, avg 51 MB, peak 66 MB; CPU limit 2 vCPU, avg < 0.01. A render can
-approach that 1 GB ceiling and get the service OOM-restarted mid-scan. So enabling this needs the
-service memory limit raised (Hobby is $5/month and includes $5 of usage, which today's footprint
-does not come close to spending).
+**The constraint was the ceiling, not the bill.** Before the change the service was capped at
+1024 MB while using 52 MB, so a render could have hit the cap and got the service OOM-restarted
+mid-scan. The cap is now 8 GB, so that risk is gone; the bill still moves by cents.
 
-**Decision for you (CTO):** raise the service memory limit / confirm the plan, then say the word and
-I merge #23 and set `RENDER_ENABLED=true`. Cost exposure is realistically $0–5 a month.
+The production image was verified directly, not assumed: `docker build` of this Dockerfile gives
+`Chromium 152.0.7977.82 Alpine Linux` at `/usr/bin/chromium-browser`, and `playwright-core` driving
+that binary inside the container rendered the Viter page to 154 KB of HTML containing the prices.
 
-Not covered: the Alpine image installs Chromium and sets `RENDER_BROWSER_PATH=/usr/bin/chromium-browser`;
-that path is unverified inside the built container, and the image is larger even while rendering is off.
-Memory was measured on this VM with a desktop Chrome build, not the Alpine one, and RSS across
-processes over-counts shared pages — treat 1 GB as the pessimistic end.
+Not covered: no competitor page has been re-scanned through the live scheduler yet, so the first
+real proof will be Maria pressing "check now" on the Viter page. The image is larger for everyone,
+including deploys that never render. Memory figures come from this VM's desktop Chrome and
+over-count shared pages across processes — treat 1 GB as the pessimistic end.
+
+---
+
+## 2026-09-17 — Owner-entered competitor prices are live; Michael's Instagram checklist
+
+**Live:** https://rivalwatch-production-8a8f.up.railway.app — deployed from `production` after PR #20.
+
+Every competitor card now has a "prices you entered yourself" box. Maria types the price list in,
+it is stored per competitor (`competitors.pricing_notes`, migration 011) and is preferred over
+anything we inferred when building the AI profile and the competitor landscape — so it survives a
+competitor we cannot fetch at all, which is the whole Instagram case. Clearing the box stores NULL;
+the event payload records only `{ cleared, chars }`, never the text.
+
+**Michael — four steps, no spend, unblocks Instagram monitoring (Phase 1 in `docs/08-instagram-source.md`):**
+
+1. Switch the company Instagram account to **Professional (Business or Creator)**.
+2. Link it to a **Facebook Page** you own.
+3. Create an app at developers.facebook.com and generate a **long-lived access token** with
+   `instagram_basic`, `instagram_manage_insights`, `pages_read_engagement`.
+4. Put the token in Railway as `META_IG_TOKEN` and the account id as `META_IG_USER_ID`
+   (`scripts/railway-set-secret.ps1 -Name META_IG_TOKEN -FromFile <path outside repo>`).
+
+No App Review is needed while the app serves only a business we own; App Review (weeks) comes when
+customers monitor their own competitors. Build after the token exists is roughly one session.
+
+Two limits to know before promising anything to a customer: the *competitor* must also be a
+Business/Creator account, and we only get caption text — prices printed inside an image (OLIKA's
+"200 грн" poster) need OCR, which is a separate feature.
+
+Not covered: nothing has been called against Meta; token rate limits and whether Maria's two
+studios are professional accounts are unverified. The manual price box was verified by tests and
+the deploy was verified only as far as the site responding 200.
 
 ---
 
