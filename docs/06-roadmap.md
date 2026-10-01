@@ -44,7 +44,7 @@ Rough order. Each item should be small enough for a single Devin session.
 
 ## Phase 2 - Paid product
 
-- [ ] Founder assistant can propose code changes as GitHub pull requests; merge is an approval
+- [x] Founder assistant can propose code changes as GitHub pull requests; merge is an approval
 - [ ] Stripe Checkout + Customer Portal; subscription events
 - [ ] Onboarding: "enter your site + 3 competitors" -> auto-configure pages
 - [ ] Historical trends per competitor (price timeline, launch cadence)
