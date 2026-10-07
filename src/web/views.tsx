@@ -24,7 +24,10 @@ import type {
 import type { EventRow } from "../events.js";
 import { LOCALES, translator, type Locale, type MessageKey, type Translate } from "../i18n/index.js";
 import { COMPANY, LEGAL_VERSION } from "../legal.js";
+import { formatMoney } from "../money.js";
 import { PLANS, getPlan } from "../plans.js";
+import { columnKey, type Comparison, type PriceColumn, type PriceItem } from "../price-list.js";
+import type { PriceSubject } from "./actions.js";
 import { renderMarkdown } from "./md.js";
 import { CSS, JS } from "./theme.js";
 
@@ -550,7 +553,7 @@ const CategoryBadge: FC<{ t: Translate; category: string; className?: string }> 
   return <span class={className}>{label === key ? category.replace(/_/g, " ") : label}</span>;
 };
 
-export const BUSINESS_TABS = ["overview", "news", "competitors", "landscape"] as const;
+export const BUSINESS_TABS = ["overview", "prices", "news", "competitors", "landscape"] as const;
 export type BusinessTab = (typeof BUSINESS_TABS)[number];
 
 /** One row of the unified feed: a confirmed website change, or a news headline. */
@@ -686,6 +689,122 @@ function parseDoc(json: string | null): LandscapeDoc | null {
   }
 }
 
+const priceColumnLabel = (t: Translate, column: PriceColumn): string => {
+  if (column.kind === "pass") return column.classes === null ? t("pc.col.pass.other") : t("pc.col.pass", { n: column.classes });
+  return t(`pc.col.${column.kind}`);
+};
+
+const money = (item: PriceItem) => formatMoney(item.currency, item.amount, null);
+
+/** The owner's business on the first row, competitors below, prices lined up by kind. */
+const PriceComparisonCard: FC<{ t: Translate; businessId: number; comparison: Comparison<PriceSubject>; ownPricing: string | null }> = ({ t, businessId, comparison, ownPricing }) => {
+  const { columns, rows, lowest } = comparison;
+  const anyPrices = rows.some((r) => r.items.length > 0);
+  return (
+    <>
+      <div class="card">
+        <h2 style="margin:0">{t("pc.h")}</h2>
+        <p class="muted small" style="margin:.2rem 0 .6rem">{t("pc.p")}</p>
+        {!anyPrices ? <div class="card flat empty">{t("pc.empty")}</div> : null}
+        {anyPrices && !columns.length ? <p class="muted small">{t("pc.nocolumns")}</p> : null}
+        {anyPrices ? (
+          <div class="scrollx">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t("pc.col.business")}</th>
+                  {columns.map((column) => (
+                    <th>{priceColumnLabel(t, column)}</th>
+                  ))}
+                  <th>{t("pc.col.all")}</th>
+                  <th>{t("pc.col.source")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(({ subject, items, cells }) => (
+                  <tr>
+                    <td>
+                      <strong>{subject.name}</strong>
+                      {subject.kind === "own" ? (
+                        <>
+                          {" "}
+                          <span class="badge brand">{t("pc.you")}</span>
+                        </>
+                      ) : null}
+                    </td>
+                    {columns.map((column) => {
+                      const key = columnKey(column);
+                      const cell = cells[key];
+                      if (!cell) {
+                        return (
+                          <td class="muted" title={t("pc.unknown")}>
+                            —
+                          </td>
+                        );
+                      }
+                      const best = lowest[key];
+                      const isLowest = !!best && best.amount === cell.amount && best.currency === cell.currency;
+                      return (
+                        <td title={cell.label} style="white-space:nowrap">
+                          {money(cell)}
+                          {isLowest ? (
+                            <>
+                              {" "}
+                              <span class="badge ok">{t("pc.lowest")}</span>
+                            </>
+                          ) : null}
+                        </td>
+                      );
+                    })}
+                    <td>
+                      {items.length ? (
+                        <details>
+                          <summary class="small">{items.length}</summary>
+                          <ul class="small" style="margin:.3rem 0 0;padding-left:1rem">
+                            {items.map((item) => (
+                              <li>
+                                {item.label || "—"}: <strong>{money(item)}</strong>
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      ) : (
+                        <span class="muted">—</span>
+                      )}
+                    </td>
+                    <td class="small">
+                      {subject.sources.length ? subject.sources.map((s) => <span class={`badge${s === "website" ? " ok" : ""}`}>{t(`pc.src.${s}`)}</span>) : <span class="muted">{t("pc.src.none")}</span>}
+                      {subject.checkedAt ? <div class="muted tiny">{t("pc.checked", { date: fmtDate(subject.checkedAt) })}</div> : null}
+                      {subject.unreadable && !subject.sources.includes("manual") ? <div class="muted tiny">{t("pc.unreadable")}</div> : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+        <p class="muted tiny" style="margin:.6rem 0 0">
+          {t("pc.note")}
+        </p>
+      </div>
+      <details class="card flat" open={!ownPricing}>
+        <summary>
+          <strong class="small">{t("pc.own.h")}</strong> {ownPricing ? null : <span class="muted small">{t("pc.own.empty")}</span>}
+        </summary>
+        <p class="muted tiny" style="margin:.4rem 0">
+          {t("pc.own.hint")}
+        </p>
+        <form method="post" action={`/b/${businessId}/pricing`}>
+          <textarea name="pricing_notes" rows={4} placeholder={t("cprice.ph")}>{ownPricing ?? ""}</textarea>
+          <button class="tiny secondary" type="submit" style="margin-top:.4rem">
+            {t("cprice.save")}
+          </button>
+        </form>
+      </details>
+    </>
+  );
+};
+
 const LandscapeCard: FC<{ t: Translate; businessId: number; landscape: Landscape | null; hasCompetitors: boolean }> = ({ t, businessId, landscape, hasCompetitors }) => {
   const doc = parseDoc(landscape?.doc_json ?? null);
   return (
@@ -788,8 +907,9 @@ export const BusinessPage: FC<{
   includeNoise: boolean;
   tab?: BusinessTab;
   landscape?: Landscape | null;
+  prices?: Comparison<PriceSubject> | null;
   flash?: string | undefined;
-}> = ({ principal, t, business, account, competitors, bigNews, insights, feedback, competitorNames, includeNoise, tab = "overview", landscape = null, flash }) => {
+}> = ({ principal, t, business, account, competitors, bigNews, insights, feedback, competitorNames, includeNoise, tab = "overview", landscape = null, prices = null, flash }) => {
   const plan = getPlan(account.plan);
   const pages = competitors.flatMap((c) => c.pages);
   const unhealthy = pages.filter((p) => p.status !== "ACTIVE" && p.status !== "PAUSED");
@@ -899,6 +1019,8 @@ export const BusinessPage: FC<{
           ))}
         </>
       ) : null}
+
+      {tab === "prices" && prices ? <PriceComparisonCard t={t} businessId={business.id} comparison={prices} ownPricing={business.pricing_notes} /> : null}
 
       {tab === "landscape" ? <LandscapeCard t={t} businessId={business.id} landscape={landscape} hasCompetitors={competitors.length > 0} /> : null}
 
