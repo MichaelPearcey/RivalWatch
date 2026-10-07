@@ -11,6 +11,28 @@ Conventions:
 
 ---
 
+## 2026-10-07 — Price comparison table: your business first, competitors beside it
+
+**Live:** yes — merged and deployed to Railway on 2026-10-07 after Maria said «викочуй».
+
+Maria's question was "where is my business, and what can you actually compare if Instagram is
+off-limits?". New **Prices** tab on every business: one table, the owner's business on the first
+row, each competitor below. Columns are price *kinds* found in the data (trial, single class,
+N-class pass, unlimited), so like is compared with like. Each row says where its prices came from:
+typed in by the owner, or read from the website (including JS-rendered pages via the headless
+browser). Nothing is fetched to build it and nothing is guessed: a missing price is a dash, and
+"cheapest" is only marked between two or more prices in the same currency. The owner's own price
+list can now be edited right under the table.
+
+Verified: `npm run check` (172 tests), including the real Viter card layout, Anoli's list,
+an Instagram-only competitor (owner-typed prices only, no page read), and tenancy.
+
+Not covered: no live UI walk-through yet; classification is keyword-based (uk/ru/en/de/fr/es), so
+unusual wording lands in "All prices" rather than a column. Google Maps ratings/hours come next,
+as a separate PR that needs a Google API key and Michael's approval for its cost.
+
+---
+
 ## 2026-09-17 — Headless browser for JavaScript-only sites: what it costs, and the one decision needed
 
 **Live:** no. Code is on PR #23; `RENDER_ENABLED` is `false` and nothing changes until you say so.
