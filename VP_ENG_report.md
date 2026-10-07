@@ -13,7 +13,7 @@ Conventions:
 
 ## 2026-10-07 — Price comparison table: your business first, competitors beside it
 
-**Live:** no. Waiting for the go-ahead to merge and deploy.
+**Live:** yes — merged and deployed to Railway on 2026-10-07 after Maria said «викочуй».
 
 Maria's question was "where is my business, and what can you actually compare if Instagram is
 off-limits?". New **Prices** tab on every business: one table, the owner's business on the first
