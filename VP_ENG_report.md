@@ -11,6 +11,24 @@ Conventions:
 
 ---
 
+## 2026-10-07 — Typed prices: plain numbers and whole sentences are understood
+
+**Live:** no — waiting for the go-ahead to merge and deploy.
+
+Maria typed her own prices the way people write: "Абонемент … місяць 1700 грн, разове заняття 350,
+перше пробне заняття 200 грн". The table showed only the trial price: "350" had no "грн", so it was
+not read as money. For typed lists (owner and competitor fields, never page text) a plain number now
+counts as a price when its words say what it is (разове, пробне, абонемент…), in the currency the
+rest of the list uses. Class counts ("на 8 занять"), times ("18:30") and addresses are never taken
+for prices.
+
+Verified: `npm run check`, with Maria's exact text as a test.
+
+Not covered: a pass with no class count ("місяць", "два абонементи") still goes to the "Other pass"
+column, because we do not know how many classes it gives.
+
+---
+
 ## 2026-10-07 — Price comparison table: your business first, competitors beside it
 
 **Live:** yes — merged and deployed to Railway on 2026-10-07 after Maria said «викочуй».

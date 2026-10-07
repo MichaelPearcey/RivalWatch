@@ -42,24 +42,74 @@ function cleanLabel(text: string): string {
   return text.replace(moneyPattern(), " ").replace(/\s+/g, " ").replace(TRIM, "").trim();
 }
 
+/** A number standing alone ("разове заняття 350"): not a time, a decimal part or a longer number. */
+const BARE_AMOUNT = /(?<![\d.,:\p{L}])(\d{2,6})(?![\d:\p{L}%]|[.,]\d)/u;
+
+/** The currency a typed list is written in: the one its amounts name most often. */
+function mainCurrency(text: string): string | null {
+  const counts = new Map<string, number>();
+  for (const m of text.matchAll(moneyPattern())) {
+    const c = currencyOf(m[1] ?? m[4] ?? "");
+    if (c) counts.set(c, (counts.get(c) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+}
+
+/**
+ * A price written as a plain number, accepted only where the words say what it is
+ * ("разове заняття 350"). Class counts ("на 8 занять") are taken out first so they
+ * are never mistaken for the price.
+ */
+function bareAmount(segment: string, currency: string | null): PriceItem | null {
+  const { kind, classes } = classify(segment);
+  if (kind === "other") return null;
+  const m = BARE_AMOUNT.exec(segment.replace(new RegExp(COUNT.source, "giu"), " "));
+  if (!m) return null;
+  const amount = Number(m[1]);
+  const label = segment.replace(m[1]!, " ").replace(/\s+/g, " ").replace(TRIM, "").trim();
+  return { label, amount, currency, period: null, kind, classes };
+}
+
+export interface ParseOptions {
+  /**
+   * Owner-typed lists: read a plain number as a price when its words name a kind
+   * of price, in the list's main currency. Off for page text, where plain numbers
+   * are mostly times, dates and addresses.
+   */
+  bareAmounts?: boolean;
+}
+
 /**
  * One price per amount found. A line's label is its own words; a line that is
  * only an amount (common on rendered pages: "1 відвідування" / "1 день" / "200 ₴")
  * borrows the few short lines above it.
  */
-export function parsePriceList(text: string): PriceItem[] {
+export function parsePriceList(text: string, options: ParseOptions = {}): PriceItem[] {
   const lines = text.split(/\r?\n/).map((l) => l.trim());
   const items: PriceItem[] = [];
   const seen = new Set<string>();
+  const listCurrency = options.bareAmounts ? mainCurrency(text) : null;
+  const push = (item: PriceItem) => {
+    const key = `${item.label}|${item.amount}|${item.currency}|${item.period}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push(item);
+  };
   lines.forEach((line, i) => {
     if (!line) return;
     const matches = [...line.matchAll(moneyPattern())];
-    if (!matches.length) return;
+    if (!matches.length && !options.bareAmounts) return;
     // "Пробне - 300 грн, разове - 400 грн": each amount keeps the words beside it.
-    const segments = matches.length > 1 ? line.split(/[;,](?!\d{3}\b)/u) : [line];
+    const parts = line.split(/[;,](?!\d{3}\b)/u);
+    const hasBare = !!options.bareAmounts && parts.some((part) => !moneyPattern().test(part) && bareAmount(part, listCurrency));
+    const segments = matches.length > 1 || hasBare ? parts : [line];
     for (const segment of segments) {
       const m = [...segment.matchAll(moneyPattern())][0];
-      if (!m) continue;
+      if (!m) {
+        const bare = options.bareAmounts ? bareAmount(segment, listCurrency) : null;
+        if (bare && HAS_LETTER.test(bare.label)) push(bare);
+        continue;
+      }
       const amount = parseAmount(m[2] ?? m[3] ?? "");
       if (!Number.isFinite(amount) || amount <= 0) continue;
       const currency = currencyOf(m[1] ?? m[4] ?? "");
@@ -67,10 +117,7 @@ export function parsePriceList(text: string): PriceItem[] {
       let label = cleanLabel(segment);
       let context = label;
       if (!HAS_LETTER.test(label)) ({ label, context } = labelFromAbove(lines, i));
-      const key = `${label}|${amount}|${currency}|${period}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      items.push({ label, amount, currency, period, ...classify(context) });
+      push({ label, amount, currency, period, ...classify(context) });
     }
   });
   return items;
