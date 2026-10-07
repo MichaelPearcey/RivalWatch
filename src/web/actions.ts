@@ -304,10 +304,10 @@ export function priceComparison(app: App, p: Principal, businessId: number): Com
   const business = getBusiness(app, p, businessId);
   const own: { subject: PriceSubject; items: PriceItem[] } = {
     subject: { kind: "own", id: business.id, name: business.name, website: business.website, sources: business.pricing_notes ? ["manual"] : [], checkedAt: null, unreadable: false },
-    items: business.pricing_notes ? parsePriceList(business.pricing_notes) : [],
+    items: business.pricing_notes ? parsePriceList(business.pricing_notes, { bareAmounts: true }) : [],
   };
   const rivals = app.repo.listCompetitors(p.accountId, business.id).map((c) => {
-    const items: PriceItem[] = c.pricing_notes ? parsePriceList(c.pricing_notes) : [];
+    const items: PriceItem[] = c.pricing_notes ? parsePriceList(c.pricing_notes, { bareAmounts: true }) : [];
     const sources: PriceSource[] = c.pricing_notes ? ["manual"] : [];
     const pages = app.repo.listPages(p.accountId, c.id).filter((pg) => pg.enabled);
     let checkedAt: string | null = null;
