@@ -43,6 +43,15 @@ describe("price list parsing", () => {
     ]);
   });
 
+  it("names an amount by the line right above it when features follow the price", () => {
+    const items = parsePriceList(["Simple pricing", "Starter", "£19/month", "1 project", "Email support", "Professional", "£49/month", "Unlimited projects", "Priority support", "Professional (annual)", "£490/year"].join("\n"));
+    expect(items.map((i) => [i.label, i.amount, i.period, i.kind])).toEqual([
+      ["Starter", 19, "month", "other"],
+      ["Professional", 49, "month", "other"],
+      ["Professional (annual)", 490, "year", "other"],
+    ]);
+  });
+
   it("splits a line quoting several prices and ignores lines with no amount", () => {
     const items = parsePriceList("Пробне - 250 грн, разове - 350 грн\nНапрямки: High Heels, Jazz Funk");
     expect(items.map((i) => [i.label, i.kind, i.amount])).toEqual([

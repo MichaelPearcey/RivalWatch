@@ -3,7 +3,7 @@
  * labelled prices, and lines them up across businesses so like is compared with
  * like: trial with trial, an 8-class pass with an 8-class pass.
  */
-import { currencyOf, moneyPattern, parseAmount } from "./money.js";
+import { currencyOf, moneyPattern, parseAmount, periodOf } from "./money.js";
 
 export type PriceKind = "trial" | "single" | "pass" | "unlimited" | "other";
 
@@ -11,6 +11,8 @@ export interface PriceItem {
   label: string;
   amount: number;
   currency: string | null;
+  /** Billing period as written ("month", "year"); null for a one-off price. */
+  period: string | null;
   kind: PriceKind;
   /** Classes in a pass ("абонемент на 8 занять" = 8); null when not stated. */
   classes: number | null;
@@ -61,22 +63,27 @@ export function parsePriceList(text: string): PriceItem[] {
       const amount = parseAmount(m[2] ?? m[3] ?? "");
       if (!Number.isFinite(amount) || amount <= 0) continue;
       const currency = currencyOf(m[1] ?? m[4] ?? "");
+      const period = periodOf(m[5]);
       let label = cleanLabel(segment);
       let context = label;
       if (!HAS_LETTER.test(label)) ({ label, context } = labelFromAbove(lines, i));
-      const key = `${label}|${amount}|${currency}`;
+      const key = `${label}|${amount}|${currency}|${period}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      items.push({ label, amount, currency, ...classify(context) });
+      items.push({ label, amount, currency, period, ...classify(context) });
     }
   });
   return items;
 }
 
 /**
- * A price card on a rendered page reads top-down: title, subtitle, details, amount,
- * button. Walk up to the previous amount (skipping that card's button) to recover
- * the card: its first two lines name it, the whole card decides what kind it is.
+ * Recovers the name of an amount that sits on a line of its own. Two layouts are
+ * common: the name directly above the amount, with features listed after it
+ * ("Starter" / "£19/month" / "1 project"), or a card whose details sit between
+ * name and amount ("Разове заняття" / "Кількість" / "1 день" / "350 ₴" / "Купити").
+ * A wordy line right above the amount is the name; otherwise walk up to the
+ * previous amount (skipping that card's one-word button) and name the card by its
+ * first two lines, letting the whole card decide what kind of price it is.
  */
 function labelFromAbove(lines: string[], index: number): { label: string; context: string } {
   const above: string[] = [];
@@ -90,6 +97,8 @@ function labelFromAbove(lines: string[], index: number): { label: string; contex
     }
     above.unshift(line);
   }
+  const nearest = above[above.length - 1];
+  if (nearest && !/\d/.test(nearest)) return { label: nearest, context: nearest };
   // A single word right after the previous amount is that card's button ("Купити").
   if (bounded && above[0] && !/\s/.test(above[0])) above.shift();
   const card = bounded ? above : above.slice(-6);

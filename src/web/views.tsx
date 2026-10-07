@@ -694,7 +694,7 @@ const priceColumnLabel = (t: Translate, column: PriceColumn): string => {
   return t(`pc.col.${column.kind}`);
 };
 
-const money = (item: PriceItem) => formatMoney(item.currency, item.amount, null);
+const money = (item: PriceItem) => formatMoney(item.currency, item.amount, item.period);
 
 /** The owner's business on the first row, competitors below, prices lined up by kind. */
 const PriceComparisonCard: FC<{ t: Translate; businessId: number; comparison: Comparison<PriceSubject>; ownPricing: string | null }> = ({ t, businessId, comparison, ownPricing }) => {
