@@ -55,6 +55,11 @@ const ConfigSchema = z.object({
   /** Chromium binary; the container installs one and sets this. */
   RENDER_BROWSER_PATH: z.string().optional(),
 
+  /** Instagram via Meta Business Discovery: a user token with instagram_basic, instagram_manage_insights, pages_read_engagement, and our own IG professional account id. */
+  META_IG_TOKEN: z.string().optional(),
+  META_IG_USER_ID: z.string().regex(/^\d+$/).optional(),
+  META_GRAPH_VERSION: z.string().default("v25.0"),
+
   /** Minutes to wait before re-fetching to confirm a detected change. 0 = confirm on the very next fetch. */
   CONFIRM_DELAY_MINUTES: z.coerce.number().int().nonnegative().default(60),
 

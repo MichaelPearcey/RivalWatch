@@ -74,8 +74,23 @@ product question of "can we watch an Instagram-only competitor at all".
   automatically; if no token is configured, say so in the user's language instead of
   pretending to monitor.
 
-## Until then
+## Status (2026-10-07)
 
-Competitor Instagram links stay `ROBOTS_BLOCKED`. Worth a small separate change:
-recognise social URLs and replace the generic "blocked by the site" badge with a
-plain-language explanation of why, so it does not read as a bug.
+Phase 1 is built: `src/sources/instagram/` (`InstagramSource`, source type `instagram`).
+Competitor links on instagram.com are routed to it when added (migration 012 moves
+existing ones), and it calls Business Discovery as our account `@rivalwatchorg`. The
+token goes in an `Authorization` header, never in the URL. Snapshot text is the bio plus
+up to 25 recent captions, newest first; followers/post counts go in `meta`, not in the text,
+so a follower change is not reported as a page change.
+
+Setup gotchas learned the hard way (October 2026 dashboard):
+
+- Use **Instagram API with Facebook Login**. The "Instagram Login" setup only offers
+  `instagram_business_*` scopes, and those cannot call `business_discovery`.
+- In the "Manage messaging & content on Instagram" use case the permissions are optional
+  and off; each one has to be Added before Graph API Explorer offers it.
+- Without `instagram_manage_insights` Meta answers `(#10) Application does not have
+  permission for this action`, even for its own example account.
+- Extend the token at developers.facebook.com/tools/debug/accesstoken (~60 days). The
+  current token expires around 2026-12-06; an expired token shows as "needs a login"
+  on every Instagram page.

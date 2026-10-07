@@ -21,6 +21,7 @@ import { errorFields, log } from "../logger.js";
 import type { ProcessOutcome } from "../monitor/pipeline.js";
 import { PLANS, getPlan } from "../plans.js";
 import { compare, parsePriceList, type Comparison, type PriceItem } from "../price-list.js";
+import { isInstagramUrl } from "../sources/instagram/index.js";
 import { discoverPages } from "../sources/website/discover.js";
 
 /**
@@ -353,6 +354,7 @@ export function addPage(app: App, p: Principal, competitorId: number, input: z.i
       competitor_id: competitorId,
       url: input.url,
       kind: input.kind,
+      source_type: isInstagramUrl(input.url) ? "instagram" : "website",
       check_interval_minutes: input.check_interval_minutes ?? plan.check_interval_minutes,
     });
     app.events.record({ type: "page.added", actor: p.actor, accountId: p.accountId, entity: { type: "page", id: page.id }, payload: { competitor_id: competitorId, url: page.url, kind: page.kind } });
