@@ -148,6 +148,7 @@ export const en = {
   "profile.unknown": "Not determined automatically.",
   "profile.prices": "Prices mentioned: {list}",
   "profile.noprices": "Not published on the pages we read.",
+  "profile.ownerprices": "plus the prices you entered yourself",
   "profile.heuristic": "Automatic summary without AI — enable AI analysis for a richer profile.",
   "cprice.h": "Prices you entered yourself",
   "cprice.empty": "not filled in",
