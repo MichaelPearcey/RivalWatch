@@ -52,6 +52,23 @@ describe("price list parsing", () => {
     ]);
   });
 
+  it("reads an owner's prices written as a sentence, plain numbers included", () => {
+    const text = "Абонемент для однієї людини місяць 1700 грн, разове заняття 350, перше пробне заняття 200 грн\nякщо брати два абонементи на різні напрямки то це буде 3000 грн";
+    expect(parsePriceList(text).map((i) => i.amount)).toEqual([1700, 200, 3000]);
+    const items = parsePriceList(text, { bareAmounts: true });
+    expect(items.map((i) => [i.amount, i.currency, i.kind])).toEqual([
+      [1700, "UAH", "pass"],
+      [350, "UAH", "single"],
+      [200, "UAH", "trial"],
+      [3000, "UAH", "pass"],
+    ]);
+  });
+
+  it("never takes a class count, a time or an unlabelled number for a typed price", () => {
+    const items = parsePriceList("Абонемент на 8 занять\nЗаняття о 18:30\nвул. Шевченка 25\nHigh Heels (творча команда, донабір) — абонемент на 12 занять: 3000 грн", { bareAmounts: true });
+    expect(items.map((i) => [i.label, i.amount, i.classes])).toEqual([["High Heels (творча команда, донабір) — абонемент на 12 занять", 3000, 12]]);
+  });
+
   it("splits a line quoting several prices and ignores lines with no amount", () => {
     const items = parsePriceList("Пробне - 250 грн, разове - 350 грн\nНапрямки: High Heels, Jazz Funk");
     expect(items.map((i) => [i.label, i.kind, i.amount])).toEqual([

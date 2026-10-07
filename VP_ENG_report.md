@@ -13,8 +13,8 @@ Conventions:
 
 ## 2026-10-07 — Instagram competitors through Meta's official API
 
-**Live:** no — waiting for Michael's OK to deploy. `META_IG_TOKEN` and `META_IG_USER_ID` are
-already on Railway (set without a redeploy; nothing read them until this change).
+**Live:** yes — merged and deployed on 2026-10-07 after Michael's go-ahead. `META_IG_TOKEN` and
+`META_IG_USER_ID` were put on Railway beforehand without a redeploy.
 
 Instagram-only competitors used to sit as "blocked by the site": we obey instagram.com's
 robots.txt and do not scrape it. Now an Instagram link is read through Meta Business Discovery
@@ -34,6 +34,24 @@ with the real token read OLIKA (406 words, 300 грн and 200 грн found). Vit
 Not covered: prices written without a currency in captions (e.g. "2500/8 занять") are not read,
 same as on websites; prices posted as images stay invisible. The token expires around
 2026-12-06 and has to be renewed by hand.
+
+---
+
+## 2026-10-07 — Typed prices: plain numbers and whole sentences are understood
+
+**Live:** yes — merged and deployed on 2026-10-07 after Michael's go-ahead.
+
+Maria typed her own prices the way people write: "Абонемент … місяць 1700 грн, разове заняття 350,
+перше пробне заняття 200 грн". The table showed only the trial price: "350" had no "грн", so it was
+not read as money. For typed lists (owner and competitor fields, never page text) a plain number now
+counts as a price when its words say what it is (разове, пробне, абонемент…), in the currency the
+rest of the list uses. Class counts ("на 8 занять"), times ("18:30") and addresses are never taken
+for prices.
+
+Verified: `npm run check`, with Maria's exact text as a test.
+
+Not covered: a pass with no class count ("місяць", "два абонементи") still goes to the "Other pass"
+column, because we do not know how many classes it gives.
 
 ---
 
