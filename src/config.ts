@@ -161,11 +161,13 @@ export class ConfigError extends Error {
   readonly name = "ConfigError";
 }
 
-const SECRET_KEYS = ["ANTHROPIC_API_KEY", "RESEND_API_KEY", "BOOTSTRAP_ADMIN_TOKEN", "BACKUP_S3_ACCESS_KEY_ID", "BACKUP_S3_SECRET_ACCESS_KEY", "GITHUB_BOT_TOKEN"] as const;
+const SECRET_KEYS = ["ANTHROPIC_API_KEY", "RESEND_API_KEY", "BOOTSTRAP_ADMIN_TOKEN", "BACKUP_S3_ACCESS_KEY_ID", "BACKUP_S3_SECRET_ACCESS_KEY", "GITHUB_BOT_TOKEN", "META_IG_TOKEN"] as const;
+const SECRET_NAME = /TOKEN|SECRET|PASSWORD|API_KEY|ACCESS_KEY/;
 
 /** Config with secrets removed, safe to log or expose on /health. */
 export function redactConfig(cfg: Config): Record<string, unknown> {
   const out: Record<string, unknown> = { ...cfg };
+  for (const k of Object.keys(out)) if (SECRET_NAME.test(k)) out[k] = out[k] ? "[set]" : "[unset]";
   for (const k of SECRET_KEYS) out[k] = cfg[k] ? "[set]" : "[unset]";
   return out;
 }

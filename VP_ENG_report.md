@@ -11,6 +11,22 @@ Conventions:
 
 ---
 
+## 2026-10-07 — Startup log printed the Meta token; now hidden
+
+**Live:** see the PR; deploying as a fix to the Instagram change.
+
+After #26 went live, the startup log line that lists the configuration showed `META_IG_TOKEN` in
+full: the list of secrets to hide did not include it. It is hidden now, and as a safety net any
+setting whose name contains TOKEN, SECRET, PASSWORD, API_KEY or ACCESS_KEY is hidden too.
+
+**Action for Michael:** the token is in Railway's logs from the 2026-10-07 22:50 UTC start. Anyone
+with access to the Railway project could read it. Please generate a new token (same steps as before,
+then extend it) so the old one stops working; I will put it on Railway.
+
+Verified: `npm run check`, with a new test that the logged config never contains secret values.
+
+---
+
 ## 2026-10-07 — Instagram competitors through Meta's official API
 
 **Live:** yes — merged and deployed on 2026-10-07 after Michael's go-ahead. `META_IG_TOKEN` and
