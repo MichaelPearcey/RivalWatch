@@ -20,6 +20,7 @@ import { LANGUAGE_NAMES, isLocale, translator, type Locale } from "../i18n/index
 import { errorFields, log } from "../logger.js";
 import type { ProcessOutcome } from "../monitor/pipeline.js";
 import { PLANS, getPlan } from "../plans.js";
+import { compare, parsePriceList, type Comparison, type PriceItem } from "../price-list.js";
 import { discoverPages } from "../sources/website/discover.js";
 
 /**
@@ -269,6 +270,63 @@ export function setCompetitorPricing(app: App, p: Principal, competitorId: numbe
     payload: { cleared: notes === null, chars: notes?.length ?? 0 },
   });
   return competitor;
+}
+
+/** The owner's own price list: the reference row in the price comparison. */
+export function setBusinessPricing(app: App, p: Principal, businessId: number, input: z.infer<typeof CompetitorPricingInput>): Business {
+  getBusiness(app, p, businessId);
+  const notes = input.pricing_notes.length ? input.pricing_notes : null;
+  const b = app.repo.updateBusiness(p.accountId, businessId, { pricing_notes: notes }) ?? notFound("business");
+  app.events.record({ type: "business.updated", actor: p.actor, accountId: p.accountId, entity: { type: "business", id: businessId }, payload: { fields: ["pricing_notes"], cleared: notes === null } });
+  return b;
+}
+
+export type PriceSource = "manual" | "website";
+
+export interface PriceSubject {
+  kind: "own" | "competitor";
+  id: number;
+  name: string;
+  website: string | null;
+  sources: PriceSource[];
+  /** When we last read one of its pages; null when nothing was read. */
+  checkedAt: string | null;
+  /** It has pages, but none of them can be read (Instagram, blocked, broken). */
+  unreadable: boolean;
+}
+
+/**
+ * The owner's business first, then each competitor, with prices lined up by kind.
+ * Owner-typed prices and prices read from stored page snapshots both count; nothing
+ * is fetched here, and a business we know no prices for stays an empty row.
+ */
+export function priceComparison(app: App, p: Principal, businessId: number): Comparison<PriceSubject> {
+  const business = getBusiness(app, p, businessId);
+  const own: { subject: PriceSubject; items: PriceItem[] } = {
+    subject: { kind: "own", id: business.id, name: business.name, website: business.website, sources: business.pricing_notes ? ["manual"] : [], checkedAt: null, unreadable: false },
+    items: business.pricing_notes ? parsePriceList(business.pricing_notes) : [],
+  };
+  const rivals = app.repo.listCompetitors(p.accountId, business.id).map((c) => {
+    const items: PriceItem[] = c.pricing_notes ? parsePriceList(c.pricing_notes) : [];
+    const sources: PriceSource[] = c.pricing_notes ? ["manual"] : [];
+    const pages = app.repo.listPages(p.accountId, c.id).filter((pg) => pg.enabled);
+    let checkedAt: string | null = null;
+    let fromWebsite = 0;
+    for (const pg of pages) {
+      const snap = app.repo.latestSnapshot(pg.id);
+      if (!snap) continue;
+      if (!checkedAt || snap.last_seen_at > checkedAt) checkedAt = snap.last_seen_at;
+      for (const item of parsePriceList(snap.text)) {
+        if (items.some((i) => i.amount === item.amount && i.currency === item.currency && i.kind === item.kind)) continue;
+        items.push(item);
+        fromWebsite++;
+      }
+    }
+    if (fromWebsite) sources.push("website");
+    const unreadable = pages.length > 0 && pages.every((pg) => pg.status !== "ACTIVE");
+    return { subject: { kind: "competitor" as const, id: c.id, name: c.name, website: c.website, sources, checkedAt, unreadable }, items };
+  });
+  return compare([own, ...rivals]);
 }
 
 export function getCompetitor(app: App, p: Principal, id: number): Competitor {

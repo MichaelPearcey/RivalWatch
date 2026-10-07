@@ -287,6 +287,8 @@ export function createWebApp(app: App) {
   api.post("/businesses", async (c) => c.json(A.createBusiness(app, P(c), A.BusinessInput.parse(await c.req.json())), 201));
   api.get("/businesses/:id", (c) => c.json(A.getBusiness(app, P(c), id(c))));
   api.patch("/businesses/:id", async (c) => c.json(A.updateBusiness(app, P(c), id(c), A.BusinessPatch.parse(await c.req.json()))));
+  api.get("/businesses/:id/prices", (c) => c.json(A.priceComparison(app, P(c), id(c))));
+  api.post("/businesses/:id/pricing", async (c) => c.json(A.setBusinessPricing(app, P(c), id(c), A.CompetitorPricingInput.parse(await c.req.json()))));
   api.delete("/businesses/:id", (c) => {
     A.deleteBusiness(app, P(c), id(c));
     return c.body(null, 204);
@@ -543,7 +545,14 @@ export function createWebApp(app: App) {
     const bigNews = repo.bigNews(p.accountId, business.id, { since: new Date(Date.now() - 30 * 86_400_000).toISOString() });
     const requested = c.req.query("tab");
     const tab = (BUSINESS_TABS as readonly string[]).includes(requested ?? "") ? (requested as BusinessTab) : "overview";
-    return c.html(<BusinessPage t={T(c)} principal={p} business={business} account={repo.getAccount(p.accountId)!} competitors={competitors} bigNews={bigNews} insights={insights} feedback={feedback} competitorNames={competitorNames} includeNoise={includeNoise} tab={tab} landscape={repo.getLandscape(p.accountId, business.id) ?? null} flash={c.req.query("flash")} />);
+    return c.html(<BusinessPage t={T(c)} principal={p} business={business} account={repo.getAccount(p.accountId)!} competitors={competitors} bigNews={bigNews} insights={insights} feedback={feedback} competitorNames={competitorNames} includeNoise={includeNoise} tab={tab} landscape={repo.getLandscape(p.accountId, business.id) ?? null} prices={tab === "prices" ? A.priceComparison(app, p, business.id) : null} flash={c.req.query("flash")} />);
+  });
+  ui.post("/b/:id/pricing", async (c) => {
+    const bid = id(c);
+    return tryUi(c, `/b/${bid}?tab=prices`, async () => {
+      A.setBusinessPricing(app, P(c), bid, A.CompetitorPricingInput.parse(await bodyOf(c)));
+      return T(c)("cprice.saved");
+    });
   });
   ui.post("/b/:id/landscape", async (c) => {
     const bid = id(c);
