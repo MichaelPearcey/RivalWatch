@@ -20,6 +20,7 @@ import { Pipeline, type PipelineOptions } from "./monitor/pipeline.js";
 import { NewsMonitor } from "./news/index.js";
 import { GoogleNewsRss } from "./news/source.js";
 import { Scheduler } from "./monitor/scheduler.js";
+import { InstagramSource } from "./sources/instagram/index.js";
 import { SourceRegistry } from "./sources/types.js";
 import { purgeDeletedAccounts } from "./web/actions.js";
 import { PoliteFetcher } from "./sources/website/fetcher.js";
@@ -94,7 +95,14 @@ export function createApp(cfg: Config, overrides: AppOverrides = {}): App {
           executablePath: cfg.RENDER_BROWSER_PATH,
         })
       : undefined);
-  const sources = new SourceRegistry().register(new WebsiteSource(fetcher, renderer));
+  const instagram = new InstagramSource({
+    token: cfg.META_IG_TOKEN,
+    userId: cfg.META_IG_USER_ID,
+    graphVersion: cfg.META_GRAPH_VERSION,
+    timeoutMs: cfg.FETCH_TIMEOUT_MS,
+    ...(overrides.fetchImpl ? { fetchImpl: overrides.fetchImpl } : {}),
+  });
+  const sources = new SourceRegistry().register(new WebsiteSource(fetcher, renderer)).register(instagram);
 
   const analyzer = overrides.analyzer ?? createAnalyzer(cfg, events);
   const pipeline = new Pipeline(repo, events, sources, analyzer, { confirmDelayMinutes: cfg.CONFIRM_DELAY_MINUTES, ...overrides.pipeline });

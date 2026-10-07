@@ -11,6 +11,32 @@ Conventions:
 
 ---
 
+## 2026-10-07 — Instagram competitors through Meta's official API
+
+**Live:** no — waiting for Michael's OK to deploy. `META_IG_TOKEN` and `META_IG_USER_ID` are
+already on Railway (set without a redeploy; nothing read them until this change).
+
+Instagram-only competitors used to sit as "blocked by the site": we obey instagram.com's
+robots.txt and do not scrape it. Now an Instagram link is read through Meta Business Discovery
+as our own account @rivalwatchorg: the competitor's bio and last 25 captions become the page
+text, so the change feed, price table and profile work on it like on a website. Followers and
+post counts are kept as metadata, so a follower going up is not a "change". Existing Instagram
+links are moved to the new source by migration 012.
+
+Plain-language failures: a personal/private/missing account, an expired token or a missing Meta
+permission show as "needs a login" with an explanation; Meta rate limits show as rate-limited.
+
+Verified: `npm run check`; unit tests with a fake Meta API (request shape, token in header not
+URL, error mapping, no call without a token or for post links) and an end-to-end scan; a live call
+with the real token read OLIKA (406 words, 300 грн and 200 грн found). Viter's guessed handle
+`viter_dancestudio` came back as not a Business account.
+
+Not covered: prices written without a currency in captions (e.g. "2500/8 занять") are not read,
+same as on websites; prices posted as images stay invisible. The token expires around
+2026-12-06 and has to be renewed by hand.
+
+---
+
 ## 2026-10-07 — Price comparison table: your business first, competitors beside it
 
 **Live:** yes — merged and deployed to Railway on 2026-10-07 after Maria said «викочуй».
